@@ -45,7 +45,15 @@
       <h2>Inventory</h2>
       <table id="hosts">
         <thead>
-          <tr><th>Name</th><th>Hardware / Device</th><th>Confidence</th><th>Addresses</th><th>Vendor</th><th>Expected</th><th>Last seen</th></tr>
+          <tr>
+            <th data-sort="name">Name</th>
+            <th data-sort="device">Hardware / Device</th>
+            <th data-sort="conf">Confidence</th>
+            <th data-sort="addr">Addresses</th>
+            <th data-sort="vendor">Vendor</th>
+            <th data-sort="expected">Expected</th>
+            <th data-sort="seen">Last seen</th>
+          </tr>
         </thead>
         <tbody id="hosts-body"></tbody>
       </table>

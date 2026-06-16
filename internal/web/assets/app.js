@@ -140,8 +140,42 @@ function confBadge(conf) {
   const lvl = confLevel(conf);
   return `<span class="conf-badge ${lvl}" title="confidence ${conf}/100">${lvl}</span>`;
 }
+// Inventory sort state (client-side; null key = server order until a header is clicked).
+let hostsData = [];
+let hostSort = { key: null, dir: 1 };
+
+// sortKeyFns map each sortable column to a comparable value for a host row.
+const sortKeyFns = {
+  name: (h) => (h.display_name || "").toLowerCase(),
+  device: (h) => (h.device_class || "").toLowerCase(),
+  conf: (h) => ((h.device_class || h.os_guess) ? h.confidence : 0) || 0,
+  addr: (h) => ipSortKey((h.ips || [])[0]),
+  vendor: (h) => (h.vendor || "").toLowerCase(),
+  expected: (h) => (h.is_expected ? 1 : 0),
+  seen: (h) => Date.parse(h.last_seen) || 0,
+};
+
+// ipSortKey returns a string that sorts IPv4 addresses correctly (octets
+// zero-padded); non-IPv4 (or missing) fall back to a plain string so the
+// comparator stays type-consistent.
+function ipSortKey(ip) {
+  if (!ip) return "";
+  const p = ip.split(".");
+  if (p.length === 4 && p.every((o) => /^\d+$/.test(o))) return p.map((o) => o.padStart(3, "0")).join(".");
+  return ip;
+}
+
 function renderHosts(hosts) {
-  $("hosts-body").innerHTML = hosts.map((h) => `
+  if (hosts) hostsData = hosts;
+  let rows = hostsData;
+  if (hostSort.key && sortKeyFns[hostSort.key]) {
+    const f = sortKeyFns[hostSort.key], d = hostSort.dir;
+    rows = [...hostsData].sort((a, b) => {
+      const av = f(a), bv = f(b);
+      return av < bv ? -d : av > bv ? d : 0;
+    });
+  }
+  $("hosts-body").innerHTML = rows.map((h) => `
     <tr data-id="${esc(h.stable_id)}">
       <td><img class="dev-icon" src="${esc(h.icon_url)}" alt="">${esc(h.display_name || "(unnamed)")}</td>
       <td>${esc(h.device_class || "—")}</td>
@@ -152,6 +186,22 @@ function renderHosts(hosts) {
       <td>${fmtTime(h.last_seen)}</td>
     </tr>`).join("");
   for (const tr of $("hosts-body").querySelectorAll("tr")) tr.onclick = () => openHost(tr.dataset.id);
+  for (const th of document.querySelectorAll("#hosts thead th[data-sort]")) {
+    th.setAttribute("aria-sort", th.dataset.sort === hostSort.key ? (hostSort.dir === 1 ? "ascending" : "descending") : "none");
+  }
+}
+
+// setupSortHeaders wires the inventory headers once: click toggles direction on
+// the active column, or switches to a new column (ascending first).
+function setupSortHeaders() {
+  for (const th of document.querySelectorAll("#hosts thead th[data-sort]")) {
+    th.onclick = () => {
+      const k = th.dataset.sort;
+      if (hostSort.key === k) hostSort.dir = -hostSort.dir;
+      else hostSort = { key: k, dir: 1 };
+      renderHosts();
+    };
+  }
 }
 function renderNew(news) {
   const sec = $("new-section");
@@ -481,7 +531,7 @@ $("overlay").onclick = closePanels;
 async function init() {
   try { me = await fetch("/api/me").then((r) => (r.ok ? r.json() : Promise.reject())); }
   catch { showLogin(); return; }
-  hideLogin(); renderUserbar(); refresh().catch((e) => $("summary").textContent = "error: " + e.message);
+  hideLogin(); renderUserbar(); setupSortHeaders(); refresh().catch((e) => $("summary").textContent = "error: " + e.message);
 }
 init();
 setInterval(() => { if (me && $("login").classList.contains("hidden")) refresh().catch(() => {}); }, 15000);

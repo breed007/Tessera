@@ -69,7 +69,12 @@ type ActiveProbe struct {
 	ICMP      bool      `yaml:"icmp"`
 	TCPPorts  []int     `yaml:"tcp_ports"`
 	UDPPorts  []int     `yaml:"udp_ports"` // scanned only when listed (no default UDP sweep)
-	Rate      ProbeRate `yaml:"rate"`
+	// SNMPCommunities are tried in order against each host (first that answers
+	// wins). Unlike the legacy single community (Secrets.SNMPCommunity, env-only),
+	// these are visible, editable, and multi-valued — SNMP community strings are
+	// low-sensitivity and operators want to see/manage them.
+	SNMPCommunities []string  `yaml:"snmp_communities"`
+	Rate            ProbeRate `yaml:"rate"`
 }
 
 type ProbeRate struct {

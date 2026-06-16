@@ -28,8 +28,8 @@ type Config struct {
 	Banners         bool
 	ReverseDNS      bool
 	ARPTable        bool
-	SNMP            bool   // gate SNMP independently of the community being set
-	SNMPCommunity   string // empty → SNMP disabled
+	SNMP            bool     // gate SNMP independently of the community being set
+	SNMPCommunities []string // tried in order; empty → SNMP disabled
 	TCPBehavioral   bool   // closed-port timing fingerprint
 	ThoroughWake    bool   // extra wake pass for power-saving devices
 	MaxProbesPerSec int
@@ -58,10 +58,10 @@ type Prober struct {
 	bannersOn     bool
 	rdnsOn        bool
 	arpTableOn    bool
-	snmpOn        bool
-	tcpBehavior   bool
-	thoroughWake  bool
-	snmpCommunity string
+	snmpOn          bool
+	tcpBehavior     bool
+	thoroughWake    bool
+	snmpCommunities []string
 	limiter       *limiter
 	cycleInterval time.Duration
 	concurrency   int
@@ -100,9 +100,9 @@ func NewProber(cfg Config, log *slog.Logger) *Prober {
 		rdnsOn:         cfg.ReverseDNS,
 		arpTableOn:     cfg.ARPTable,
 		snmpOn:         cfg.SNMP,
-		tcpBehavior:    cfg.TCPBehavioral,
-		thoroughWake:   cfg.ThoroughWake,
-		snmpCommunity:  cfg.SNMPCommunity,
+		tcpBehavior:     cfg.TCPBehavioral,
+		thoroughWake:    cfg.ThoroughWake,
+		snmpCommunities: cfg.SNMPCommunities,
 		limiter:        newLimiter(cfg.MaxProbesPerSec),
 		cycleInterval:  cycle,
 		concurrency:    32,
@@ -342,14 +342,25 @@ func (p *Prober) probeHost(ctx context.Context, ip netip.Addr, sink *observation
 		}
 	}
 
-	if p.snmpOn && p.snmpCommunity != "" {
-		if p.limiter.wait(ctx) == nil {
-			if name, _ := snmpGet(ctx, ipStr, p.snmpCommunity, oidSysName, p.snmpTimeout, p.sourceIP); name != "" {
+	if p.snmpOn && len(p.snmpCommunities) > 0 {
+		// Find the first community this host answers to (via sysName), then reuse it
+		// for sysDescr — so we don't re-try every community for the second OID.
+		community := ""
+		for _, c := range p.snmpCommunities {
+			if c == "" {
+				continue
+			}
+			if p.limiter.wait(ctx) != nil {
+				break
+			}
+			if name, _ := snmpGet(ctx, ipStr, c, oidSysName, p.snmpTimeout, p.sourceIP); name != "" {
+				community = c
 				p.record(ctx, sink, emit{observation.SourceActiveSNMP, observation.SubjectIPv4, ipStr, observation.AttrHostname, name, confSNMPName})
+				break
 			}
 		}
-		if p.limiter.wait(ctx) == nil {
-			if descr, _ := snmpGet(ctx, ipStr, p.snmpCommunity, oidSysDescr, p.snmpTimeout, p.sourceIP); descr != "" {
+		if community != "" && p.limiter.wait(ctx) == nil {
+			if descr, _ := snmpGet(ctx, ipStr, community, oidSysDescr, p.snmpTimeout, p.sourceIP); descr != "" {
 				p.record(ctx, sink, emit{observation.SourceActiveSNMP, observation.SubjectIPv4, ipStr, observation.AttrOSGuess, descr, confSNMPDescr})
 			}
 		}

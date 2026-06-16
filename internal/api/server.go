@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/tessera/tessera/internal/account"
+	"github.com/tessera/tessera/internal/collector"
 	"github.com/tessera/tessera/internal/config"
 	"github.com/tessera/tessera/internal/observation"
 	"github.com/tessera/tessera/internal/settings"
@@ -42,6 +43,7 @@ type Options struct {
 	Store           store.Store
 	Reconcile       func(context.Context) error
 	Rescan          func(context.Context, []netip.Addr) error // on-demand active probe of explicit targets
+	Statuses        func() []collector.Status                 // collector connection health (UniFi, Fingerbank)
 	OnRestart       func()                                    // triggers a graceful restart to apply settings
 
 	Log *slog.Logger
@@ -64,6 +66,7 @@ type Server struct {
 	cfg           config.Config
 	reconcile     func(context.Context) error
 	rescan        func(context.Context, []netip.Addr) error
+	statuses      func() []collector.Status
 	onRestart     func()
 	token         string
 	tls           TLSOptions
@@ -92,6 +95,7 @@ func New(opts Options) *Server {
 		cfg:           opts.EffectiveConfig,
 		reconcile:     opts.Reconcile,
 		rescan:        opts.Rescan,
+		statuses:      opts.Statuses,
 		onRestart:     opts.OnRestart,
 		token:         opts.Token,
 		tls:           opts.TLS,
@@ -140,6 +144,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/conflicts", s.handleConflicts)
 	mux.HandleFunc("GET /api/new", s.handleNewDevices)
 	mux.HandleFunc("GET /api/observations", s.handleObservations)
+	mux.HandleFunc("GET /api/status", s.handleStatus)
 
 	// Export.
 	mux.HandleFunc("GET /api/exports", s.handleExportList)

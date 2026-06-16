@@ -49,6 +49,7 @@ type Editable struct {
 	ActiveProbeUDPPorts  []int    `json:"active_probe_udp_ports"`
 	ActiveProbeICMP      bool     `json:"active_probe_icmp"`
 	ActiveProbeInterface string   `json:"active_probe_interface"`
+	SNMPCommunities      []string `json:"snmp_communities"` // visible, multi-valued (low-sensitivity, operator-managed)
 
 	SensorEnabled bool `json:"sensor_enabled"`
 
@@ -194,6 +195,7 @@ func applyEditable(c *config.Config, e Editable) {
 	c.ActiveProbe.UDPPorts = e.ActiveProbeUDPPorts
 	c.ActiveProbe.ICMP = e.ActiveProbeICMP
 	c.ActiveProbe.Interface = e.ActiveProbeInterface
+	c.ActiveProbe.SNMPCommunities = e.SNMPCommunities
 	c.Sensor.Enabled = e.SensorEnabled
 
 	b := func(v bool) *bool { return &v }
@@ -224,6 +226,7 @@ func extractEditable(c config.Config) Editable {
 		ActiveProbeUDPPorts:  c.ActiveProbe.UDPPorts,
 		ActiveProbeICMP:      c.ActiveProbe.ICMP,
 		ActiveProbeInterface: c.ActiveProbe.Interface,
+		SNMPCommunities:      c.ActiveProbe.SNMPCommunities,
 		SensorEnabled:        c.Sensor.Enabled,
 
 		DiscPassiveARP:       d.PassiveARP,

@@ -147,6 +147,7 @@ func New(ctx context.Context, fileCfg config.Config, log *slog.Logger) (*App, er
 			Store:           st,
 			Reconcile:       func(ctx context.Context) error { _, e := a.recon.Rebuild(ctx); return e },
 			Rescan:          a.Rescan,
+			Statuses:        a.Statuses,
 			OnRestart:       a.requestRestart,
 			Log:             log,
 		})
@@ -240,6 +241,22 @@ func buildCollectors(cfg config.Config, st store.Store, log *slog.Logger) ([]col
 // toggles are authoritative for which techniques run (.WithTechniques).
 func activeProbeConfig(cfg config.Config) active.Config {
 	disc := cfg.Discovery.Resolve()
+	// SNMP communities: the visible, editable list plus the legacy single community
+	// (env TESSERA_SNMP_COMMUNITY / older DB secret), de-duplicated, so existing
+	// installs keep working while operators manage multiple visibly.
+	communities := append([]string(nil), cfg.ActiveProbe.SNMPCommunities...)
+	if c := cfg.Secrets.SNMPCommunity; c != "" {
+		dup := false
+		for _, e := range communities {
+			if e == c {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			communities = append(communities, c)
+		}
+	}
 	return active.Config{
 		Subnets:         cfg.ActiveProbe.Subnets,
 		TCPPorts:        cfg.ActiveProbe.TCPPorts,
@@ -253,11 +270,23 @@ func activeProbeConfig(cfg config.Config) active.Config {
 		SNMP:            disc.ActiveSNMP,
 		TCPBehavioral:   disc.TCPBehavioral,
 		ThoroughWake:    disc.ThoroughWake,
-		SNMPCommunity:   cfg.Secrets.SNMPCommunity,
+		SNMPCommunities: communities,
 		MaxProbesPerSec: cfg.ActiveProbe.Rate.MaxProbesPerSec,
 		CycleInterval:   cfg.ActiveProbe.Rate.CycleInterval,
 		Interface:       cfg.ActiveProbe.Interface,
 	}.WithTechniques()
+}
+
+// Statuses returns the connection health of every collector that reports it
+// (UniFi, Fingerbank) — surfaced in the Settings UI.
+func (a *App) Statuses() []collector.Status {
+	var out []collector.Status
+	for _, c := range a.collectors {
+		if r, ok := c.(collector.Reporter); ok {
+			out = append(out, r.Status())
+		}
+	}
+	return out
 }
 
 // Rescan probes the given addresses once on demand (the UI "Rescan" action) and

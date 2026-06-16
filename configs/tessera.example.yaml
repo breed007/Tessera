@@ -39,6 +39,11 @@ active_probe:
   # Only the ports you list are probed — there is no default UDP sweep.
   tcp_ports: [22, 80, 443, 445, 3389, 161]
   udp_ports: []                          # e.g. [53, 123, 161, 500, 1900, 5353]
+  # SNMP community strings, tried in order against each host (first that answers
+  # wins). Visible/editable (also in the Settings UI) — community strings are
+  # low-sensitivity. The legacy single TESSERA_SNMP_COMMUNITY env value still
+  # works and is merged in.
+  snmp_communities: []                   # e.g. ["public", "private"]
   rate:
     max_probes_per_sec: 20
     cycle_interval: 15m

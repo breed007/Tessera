@@ -6,8 +6,22 @@ import (
 	"net/http"
 	"net/netip"
 
+	"github.com/tessera/tessera/internal/collector"
 	"github.com/tessera/tessera/internal/collector/active"
 )
+
+// handleStatus reports collector connection health (UniFi, Fingerbank). Read-only,
+// so any authenticated user may see it.
+func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+	var out []collector.Status
+	if s.statuses != nil {
+		out = s.statuses()
+	}
+	if out == nil {
+		out = []collector.Status{}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
 
 // On-demand rescan: actively probe a single host's addresses or a whole subnet
 // right now, then reconcile. A host has few addresses and probes in seconds, so

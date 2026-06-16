@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/tessera/tessera/internal/account"
+	"github.com/tessera/tessera/internal/collector"
 	"github.com/tessera/tessera/internal/config"
 	"github.com/tessera/tessera/internal/observation"
 	"github.com/tessera/tessera/internal/reconcile"
@@ -70,6 +71,7 @@ func setupRescan(t *testing.T) (*httptest.Server, func() [][]netip.Addr) {
 		Store:           st,
 		Reconcile:       func(ctx context.Context) error { _, e := recon.Rebuild(ctx); return e },
 		Rescan:          rescan,
+		Statuses:        func() []collector.Status { return []collector.Status{{Name: "unifi", State: "ok", Detail: "polled"}} },
 	})
 	ts := httptest.NewServer(srv.routes())
 	t.Cleanup(ts.Close)
@@ -98,6 +100,14 @@ func TestRescanHost(t *testing.T) {
 	calls := getCalls()
 	if len(calls) != 1 || len(calls[0]) != 1 || calls[0][0].String() != "10.0.0.20" {
 		t.Fatalf("rescan probed %v, want [[10.0.0.20]]", calls)
+	}
+}
+
+func TestStatusEndpoint(t *testing.T) {
+	ts, _ := setupRescan(t)
+	got := getJSON[[]collector.Status](t, ts.URL+"/api/status")
+	if len(got) != 1 || got[0].Name != "unifi" || got[0].State != "ok" {
+		t.Fatalf("status = %+v, want one ok unifi", got)
 	}
 }
 

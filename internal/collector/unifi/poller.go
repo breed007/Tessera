@@ -6,16 +6,19 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/tessera/tessera/internal/collector"
 	"github.com/tessera/tessera/internal/observation"
 )
 
 // Poller is the long-running UniFi collector. On each cycle it fetches clients,
 // devices, and configured networks, maps them to observations, and writes them
-// through the standard Sink. It implements collector.Collector.
+// through the standard Sink. It implements collector.Collector and reports its
+// connection health via the embedded *collector.Health (collector.Reporter).
 type Poller struct {
 	client   *Client
 	interval time.Duration
 	log      *slog.Logger
+	*collector.Health
 }
 
 // NewPoller builds a UniFi poller from a connection config and poll interval.
@@ -30,7 +33,7 @@ func NewPoller(cfg Config, interval time.Duration, log *slog.Logger) (*Poller, e
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Poller{client: cl, interval: interval, log: log}, nil
+	return &Poller{client: cl, interval: interval, log: log, Health: collector.NewHealth("unifi", "not polled yet")}, nil
 }
 
 // Name identifies the collector (basis of its collector_id).
@@ -99,6 +102,11 @@ func (p *Poller) pollOnce(ctx context.Context, sink *observation.Sink) error {
 		written++
 	}
 	p.log.Info("unifi poll complete", "observations", written)
+	if firstErr != nil {
+		p.Failure(firstErr)
+	} else {
+		p.Success(fmt.Sprintf("polled controller — %d observations", written))
+	}
 	return firstErr
 }
 

@@ -243,9 +243,22 @@ async function openHost(id) {
 // ── settings ─────────────────────────────────────────────────────────────────
 
 async function openSettings() {
-  const [s, users, allIcons] = await Promise.all([getJSON("/api/settings"), getJSON("/api/users"), loadIcons(true)]);
+  const [s, users, allIcons, statuses] = await Promise.all([
+    getJSON("/api/settings"), getJSON("/api/users"), loadIcons(true), getJSON("/api/status").catch(() => []),
+  ]);
   const customIcons = allIcons.filter((i) => i.source === "custom");
   const e = s.editable, flags = s.secrets_set, canSec = s.can_store_secrets;
+  const statusByName = {};
+  for (const st of statuses || []) statusByName[st.name] = st;
+  const statusBadge = (name) => {
+    const st = statusByName[name];
+    if (!st) return "";
+    const cls = st.state === "ok" ? "ok" : st.state === "error" ? "err" : "idle";
+    const dot = st.state === "idle" ? "○" : "●";
+    const when = st.last_run && !st.last_run.startsWith("0001") ? " · " + fmtTime(st.last_run) : "";
+    const detail = (st.state === "error" ? (st.err || "error") : (st.detail || st.state)) + when;
+    return `<span class="status-badge ${cls}" title="${esc(detail)}">${dot} ${esc(st.state)}</span>`;
+  };
   const secField = (id, label, isSet) => `
     <div class="field"><label>${label} ${isSet ? '<span class="conf">(set — leave blank to keep)</span>' : ""}</label>
       <input type="password" id="${id}" placeholder="${isSet ? "••••••••" : "not set"}" ${canSec ? "" : "disabled"}></div>`;
@@ -262,7 +275,7 @@ async function openSettings() {
       <p class="muted-note">Changing the bind/port needs a restart.</p>
     </div>
 
-    <div class="settings-section"><h3>UniFi controller</h3>
+    <div class="settings-section"><h3>UniFi controller ${statusBadge("unifi")}</h3>
       ${chk("set-unifi-en", "Enabled", e.unifi_enabled)}
       ${txt("set-unifi-url", "Base URL (e.g. https://192.168.1.1)", e.unifi_base_url)}
       <p class="muted-note">UniFi OS console (UDM/UDR/Cloud Key): keep path prefix <code>/proxy/network</code>. Software controller on :8443: blank prefix. Use a <b>local</b> admin account, not a UI.com cloud login (MFA breaks it).</p>
@@ -276,13 +289,13 @@ async function openSettings() {
     </div>
 
     <div class="settings-section"><h3>SNMP</h3>
-      ${secField("set-snmp", "Community string", flags.snmp_community_set)}
+      ${txt("set-snmp-comms", "Community strings (comma-separated, tried in order)", (e.snmp_communities || []).join(", "))}
       <div class="field"><label>Test against device IP</label><input type="text" id="set-snmp-ip" placeholder="10.0.0.1"></div>
       <button class="btn" id="btn-test-snmp">Test SNMP</button><span class="test-result" id="tr-snmp"></span>
-      <p class="muted-note">Used by the active prober when set.</p>
+      <p class="muted-note">Visible by design — SNMP community strings are low-sensitivity. The active prober tries each in order; the first a device answers wins. A legacy <code>TESSERA_SNMP_COMMUNITY</code> env value still works and is merged in.</p>
     </div>
 
-    <div class="settings-section"><h3>Fingerbank</h3>
+    <div class="settings-section"><h3>Fingerbank ${statusBadge("fingerbank")}</h3>
       ${chk("set-fb-en", "Enabled (sends DHCP fingerprints to a third party)", e.fingerbank_enabled)}
       <div class="field"><label>Mode</label><select id="set-fb-mode">
         <option value="api" ${e.fingerbank_mode === "api" ? "selected" : ""}>api</option>
@@ -378,7 +391,7 @@ function wireSettings(canSec) {
     base_url: val("set-unifi-url"), path_prefix: val("set-unifi-prefix"), site: val("set-unifi-site"),
     verify_tls: checked("set-unifi-verify"), username: $("set-unifi-user").value, password: $("set-unifi-pass").value, api_key: $("set-unifi-key").value,
   });
-  $("btn-test-snmp").onclick = () => runTest("/api/test/snmp", "tr-snmp", { ip: val("set-snmp-ip"), community: $("set-snmp").value });
+  $("btn-test-snmp").onclick = () => runTest("/api/test/snmp", "tr-snmp", { ip: val("set-snmp-ip"), community: splitList(val("set-snmp-comms"))[0] || "" });
   $("btn-test-fb").onclick = () => runTest("/api/test/fingerbank", "tr-fb", { key: $("set-fb-key").value });
 
   $("btn-add-user").onclick = async () => {
@@ -422,6 +435,7 @@ function wireSettings(canSec) {
       active_probe_tcp_ports: splitList(val("set-ap-ports")).map(Number).filter((n) => n > 0),
       active_probe_udp_ports: splitList(val("set-ap-uports")).map(Number).filter((n) => n > 0),
       active_probe_icmp: checked("disc-a-icmp"), active_probe_interface: val("set-ap-iface"),
+      snmp_communities: splitList(val("set-snmp-comms")),
       disc_passive_arp: checked("disc-p-arp"), disc_passive_dhcp: checked("disc-p-dhcp"),
       disc_passive_mdns: checked("disc-p-mdns"), disc_passive_ssdp: checked("disc-p-ssdp"),
       disc_passive_netbios: checked("disc-p-nb"),
@@ -435,7 +449,7 @@ function wireSettings(canSec) {
     if (canSec) {
       const add = (k, id) => { const v = secInput(id); if (v !== undefined) secrets[k] = v; };
       add("unifi_username", "set-unifi-user"); add("unifi_password", "set-unifi-pass"); add("unifi_api_key", "set-unifi-key");
-      add("snmp_community", "set-snmp"); add("fingerbank_key", "set-fb-key");
+      add("fingerbank_key", "set-fb-key");
     }
     try { await api("PUT", "/api/settings", { editable, secrets }); toast("Saved — restart to apply"); openSettings(); }
     catch (e) { toast(e.message); }

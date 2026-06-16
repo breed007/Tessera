@@ -2,9 +2,11 @@ package fingerbank
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
+	"github.com/tessera/tessera/internal/collector"
 	"github.com/tessera/tessera/internal/observation"
 )
 
@@ -19,6 +21,7 @@ type Collector struct {
 	reader   Reader
 	interval time.Duration
 	log      *slog.Logger
+	*collector.Health
 
 	// lastSig remembers the signature last emitted per MAC so an unchanged
 	// signature isn't re-emitted every cycle (which would bloat the log).
@@ -33,7 +36,11 @@ func NewCollector(enricher Enricher, reader Reader, interval time.Duration, log 
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Collector{enricher: enricher, reader: reader, interval: interval, log: log, lastSig: map[string]string{}}
+	return &Collector{
+		enricher: enricher, reader: reader, interval: interval, log: log,
+		Health:  collector.NewHealth("fingerbank", "mode="+enricher.Mode()),
+		lastSig: map[string]string{},
+	}
 }
 
 func (c *Collector) Name() string { return "fingerbank" }
@@ -91,6 +98,8 @@ func (c *Collector) runOnce(ctx context.Context, sink *observation.Sink) {
 	}
 
 	emitted := 0
+	attempted := len(bySig)
+	var lastErr error
 	for key, sig := range bySig {
 		v, err := c.enricher.Classify(ctx, sig)
 		if err != nil {
@@ -98,6 +107,7 @@ func (c *Collector) runOnce(ctx context.Context, sink *observation.Sink) {
 				return
 			}
 			// 429/backoff or transient — leave lastSig unset so we retry later.
+			lastErr = err
 			c.log.Debug("fingerbank classify deferred", "err", err)
 			continue
 		}
@@ -118,6 +128,13 @@ func (c *Collector) runOnce(ctx context.Context, sink *observation.Sink) {
 					observation.AttrOSGuess, v.OSGuess, v.Score)
 			}
 			emitted++
+		}
+	}
+	if attempted > 0 {
+		if lastErr != nil {
+			c.Failure(lastErr)
+		} else {
+			c.Success(fmt.Sprintf("mode=%s — classified %d", c.enricher.Mode(), emitted))
 		}
 	}
 	if emitted > 0 {

@@ -208,6 +208,7 @@ async function openHost(id) {
       <dt>Stable ID</dt><dd class="mono">${esc(h.stable_id)}</dd>
       <dt>Hardware / Device</dt><dd>${esc(h.device_class || "—")} ${h.device_class ? confBadge(h.confidence) : ""}</dd>
       <dt>Operating System</dt><dd>${esc(h.os_guess || "—")} ${h.os_guess ? confBadge(h.confidence) : ""}</dd>
+      ${h.firmware ? `<dt>Firmware</dt><dd class="mono">${esc(h.firmware)}</dd>` : ""}
       <dt>Expected</dt><dd>${expectedPill(h.is_expected)}</dd>
       <dt>First seen</dt><dd>${fmtTime(h.first_seen)}</dd>
       <dt>Last seen</dt><dd>${fmtTime(h.last_seen)}</dd>

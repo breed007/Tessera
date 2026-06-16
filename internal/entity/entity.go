@@ -39,6 +39,7 @@ type Host struct {
 	DisplayName string    `json:"display_name,omitempty"`
 	DeviceClass string    `json:"device_class,omitempty"`
 	OSGuess     string    `json:"os_guess,omitempty"`
+	Firmware    string    `json:"firmware,omitempty"` // device firmware/version (UniFi gear via the controller)
 	Confidence  int       `json:"confidence"`
 	IsExpected  bool      `json:"is_expected"`
 	Icon        string    `json:"icon,omitempty"` // operator-chosen icon id; empty → auto (§M12)

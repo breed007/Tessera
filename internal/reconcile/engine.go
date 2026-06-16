@@ -199,7 +199,7 @@ func (e *engine) applyMAC(h *hostAcc, obs observation.Observation) {
 			iface.oui.add(e.score(obs))
 		}
 
-	case observation.AttrHostname, observation.AttrDeviceClass, observation.AttrOSGuess,
+	case observation.AttrHostname, observation.AttrDeviceClass, observation.AttrOSGuess, observation.AttrFirmware,
 		observation.AttrDisplayName, observation.AttrIsExpected, observation.AttrNotes, observation.AttrIcon:
 		e.hostAttr(h, obs)
 
@@ -468,6 +468,9 @@ func (e *engine) snapshot() (entity.Snapshot, []conflictRec) {
 		}
 		if w, ok := winnerValue(h.attrs[observation.AttrIcon]); ok {
 			host.Icon = w
+		}
+		if w, ok := winnerValue(h.attrs[observation.AttrFirmware]); ok {
+			host.Firmware = w
 		}
 		if s, ok := winnerScored(h.attrs[observation.AttrDeviceClass]); ok {
 			host.DeviceClass = s.obs.Value

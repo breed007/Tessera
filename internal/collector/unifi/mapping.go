@@ -33,6 +33,7 @@ const (
 	confOUI         = 80
 	confDeviceClass = 75
 	confSubnet      = 95
+	confFirmware    = 90 // first-party fact straight from the controller
 	// OS derived from a fingerprinted model name — a notch below the model itself,
 	// which is the directly-reported fact.
 	confFingerprintOS = 70
@@ -107,6 +108,9 @@ func mapDevices(devices []deviceDTO) []emit {
 		}
 		if dc != "" {
 			out = append(out, emit{observation.SubjectMAC, mac, observation.AttrDeviceClass, dc, confDeviceClass})
+		}
+		if v := strings.TrimSpace(d.Version); v != "" {
+			out = append(out, emit{observation.SubjectMAC, mac, observation.AttrFirmware, v, confFirmware})
 		}
 	}
 	return out

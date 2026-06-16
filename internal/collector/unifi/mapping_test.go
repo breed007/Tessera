@@ -14,7 +14,7 @@ const clientsJSON = `{"meta":{"rc":"ok"},"data":[
 ]}`
 
 const devicesJSON = `{"meta":{"rc":"ok"},"data":[
-  {"mac":"f0:9f:c2:aa:bb:cc","ip":"10.0.10.2","name":"office-sw","type":"usw","model":"USW-24-PoE"}
+  {"mac":"f0:9f:c2:aa:bb:cc","ip":"10.0.10.2","name":"office-sw","type":"usw","model":"USW-24-PoE","version":"7.0.50"}
 ]}`
 
 const networksJSON = `{"meta":{"rc":"ok"},"data":[
@@ -117,18 +117,23 @@ func TestMapDevices(t *testing.T) {
 		t.Fatal(err)
 	}
 	es := mapDevices(devices)
-	if e := findEmit(es, observation.AttrDeviceClass, "f0:9f:c2:aa:bb:cc"); e == nil || e.value != "UniFi Switch" {
+	// Resolves the model code to its product name (from the bundled UniFi DB).
+	if e := findEmit(es, observation.AttrDeviceClass, "f0:9f:c2:aa:bb:cc"); e == nil || e.value != "UniFi USW 24 PoE" {
 		t.Errorf("device_class wrong: %+v", e)
 	}
 	if e := findEmit(es, observation.AttrHostname, "f0:9f:c2:aa:bb:cc"); e == nil || e.value != "office-sw" {
 		t.Errorf("device hostname wrong: %+v", e)
+	}
+	if e := findEmit(es, observation.AttrFirmware, "f0:9f:c2:aa:bb:cc"); e == nil || e.value != "7.0.50" {
+		t.Errorf("firmware wrong: %+v", e)
 	}
 }
 
 const modelDevicesJSON = `{"meta":{"rc":"ok"},"data":[
   {"mac":"f0:9f:c2:00:00:01","ip":"10.0.10.3","name":"oasis","type":"uap","model":"U7PG2"},
   {"mac":"f0:9f:c2:00:00:02","ip":"10.0.10.1","name":"gateway","type":"udm","model":"UDMPRO"},
-  {"mac":"f0:9f:c2:00:00:03","ip":"10.0.10.4","name":"mystery","type":"usw","model":"ZZ-UNKNOWN-99"}
+  {"mac":"f0:9f:c2:00:00:03","ip":"10.0.10.4","name":"mystery","type":"usw","model":"ZZ-UNKNOWN-99"},
+  {"mac":"f0:9f:c2:00:00:04","ip":"10.0.10.22","name":"symphony","type":"uap","model":"U7PROXG"}
 ]}`
 
 func TestMapDevicesModel(t *testing.T) {
@@ -138,7 +143,7 @@ func TestMapDevicesModel(t *testing.T) {
 	}
 	es := mapDevices(devices)
 	// Known model codes resolve to the specific product name.
-	if e := findEmit(es, observation.AttrDeviceClass, "f0:9f:c2:00:00:01"); e == nil || e.value != "UniFi UAP AC Pro" {
+	if e := findEmit(es, observation.AttrDeviceClass, "f0:9f:c2:00:00:01"); e == nil || e.value != "UniFi AC Pro" {
 		t.Errorf("AP model wrong: %+v", e)
 	}
 	if e := findEmit(es, observation.AttrDeviceClass, "f0:9f:c2:00:00:02"); e == nil || e.value != "UniFi UDM Pro" {
@@ -147,6 +152,10 @@ func TestMapDevicesModel(t *testing.T) {
 	// Unknown model code falls back to the coarse type-based class.
 	if e := findEmit(es, observation.AttrDeviceClass, "f0:9f:c2:00:00:03"); e == nil || e.value != "UniFi Switch" {
 		t.Errorf("unknown model should fall back to type class: %+v", e)
+	}
+	// WiFi-7 gear resolves from the current official DB (was missing from the old table).
+	if e := findEmit(es, observation.AttrDeviceClass, "f0:9f:c2:00:00:04"); e == nil || e.value != "UniFi U7 Pro XG" {
+		t.Errorf("WiFi-7 model wrong: %+v", e)
 	}
 }
 

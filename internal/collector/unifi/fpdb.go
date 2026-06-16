@@ -54,6 +54,9 @@ func resolveUniFiModel(code string) (string, bool) {
 		return "", false
 	}
 	name, ok := unifiModels[code]
+	if !ok {
+		name, ok = unifiModels[strings.ReplaceAll(code, "-", "")] // tolerate dashed codes
+	}
 	if !ok || strings.TrimSpace(name) == "" {
 		return "", false
 	}

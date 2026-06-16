@@ -1,0 +1,24 @@
+services:
+  tessera:
+    build: .                       # or: image: ghcr.io/tessera/tessera:latest
+    container_name: tessera
+    restart: unless-stopped
+    ports:
+      - "10404:10404"
+    volumes:
+      - tessera-data:/var/lib/tessera
+      # Optional: mount your own config. The default already binds all interfaces
+      # (listen_addr: 0.0.0.0:10404), so the UI is reachable on the published port;
+      # create your admin account in the browser on first run.
+      # - ./config.yaml:/etc/tessera/config.yaml:ro
+    environment:
+      # Most config is done in the UI. Optionally pre-seed secrets via env:
+      # - TESSERA_API_TOKEN=long-random-string   # bearer token for scripts
+      # - TESSERA_SECRET_KEY=...                  # else auto-generated in the volume
+      []
+    # Uncomment for ICMP liveness in the active prober (raw-ish sockets):
+    # cap_add:
+    #   - NET_RAW
+
+volumes:
+  tessera-data:

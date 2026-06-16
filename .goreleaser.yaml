@@ -1,0 +1,85 @@
+version: 2
+project_name: tessera
+
+# Snapshot (local, unpublished) builds get a MONOTONIC version so a freshly built
+# .deb always out-ranks the one already installed — i.e. `apt install ./tessera_*.deb`
+# is seen as an upgrade, not a same-version no-op or a downgrade. The default
+# template is commit-hash-based and does NOT increase between builds, which makes
+# apt/dpkg refuse the upgrade. {{.Timestamp}} (Unix epoch) always increases, and
+# dpkg compares the trailing digit run numerically. Tagged releases are unaffected
+# — they use the tag as the version and already increase monotonically.
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot.{{ .Timestamp }}"
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: tessera
+    main: ./cmd/tessera
+    binary: tessera
+    env:
+      - CGO_ENABLED=0          # pure-Go static binary; the passive sensor (-tags pcap) is a separate, documented build
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  - id: tessera
+    formats: ["tar.gz"]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+      - src: configs/tessera.example.yaml
+        dst: tessera.example.yaml
+
+nfpms:
+  - id: packages
+    package_name: tessera
+    vendor: The Tessera Authors
+    homepage: https://github.com/tessera/tessera
+    maintainer: The Tessera Authors <noreply@tessera.invalid>
+    description: |-
+      Discovery-first IPAM. A continuously reconciled inventory of your address
+      space, assembled from passive and active network signals.
+    license: MIT
+    formats:
+      - deb
+      - rpm
+      - apk
+    bindir: /usr/bin
+    contents:
+      - src: deploy/tessera.service
+        dst: /lib/systemd/system/tessera.service
+      - src: configs/tessera.minimal.yaml
+        dst: /etc/tessera/config.yaml
+        type: "config|noreplace"      # never clobber operator edits on upgrade
+      - src: configs/tessera.example.yaml
+        dst: /usr/share/doc/tessera/tessera.example.yaml   # full annotated reference
+      - dst: /var/lib/tessera
+        type: dir
+        file_info:
+          mode: 0750
+    scripts:
+      postinstall: deploy/scripts/postinstall.sh
+      preremove: deploy/scripts/preremove.sh
+      postremove: deploy/scripts/postremove.sh
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  use: github
+  sort: asc
+
+release:
+  github:
+    owner: tessera
+    name: tessera
+  draft: true

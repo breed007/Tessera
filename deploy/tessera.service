@@ -1,0 +1,41 @@
+[Unit]
+Description=Tessera — discovery-first IPAM
+Documentation=https://github.com/tessera/tessera
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tessera
+Group=tessera
+ExecStart=/usr/bin/tessera run -config /etc/tessera/config.yaml
+# 'always' so the in-app "restart to apply settings" (a clean exit) comes back up.
+# An explicit `systemctl stop` still stops it.
+Restart=always
+RestartSec=3
+
+# Secrets (TESSERA_API_TOKEN, TESSERA_UNIFI_*, TESSERA_FINGERBANK_KEY, ...)
+# live here, root-owned 0640. The leading '-' makes it optional.
+EnvironmentFile=-/etc/tessera/tessera.env
+
+# CAP_NET_RAW: ICMP liveness for the active prober (and libpcap capture in a
+# -tags pcap build). Everything else runs unprivileged.
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
+
+# Hardening.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_NETLINK AF_PACKET
+RestrictNamespaces=true
+LockPersonality=true
+StateDirectory=tessera
+ReadWritePaths=/var/lib/tessera
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,123 @@
+# Tessera example configuration (§5).
+#
+# SECRETS ARE NEVER PUT HERE. The UniFi password/API key, the Fingerbank API
+# key, and the SNMP community come from the environment only:
+#   TESSERA_UNIFI_USERNAME / TESSERA_UNIFI_PASSWORD
+#   TESSERA_UNIFI_API_KEY
+#   TESSERA_FINGERBANK_KEY
+#   TESSERA_SNMP_COMMUNITY
+# They are read into memory at startup, never written back, never logged.
+
+sensor:
+  # Master switch for ALL passive traffic inspection (packet capture). OFF by
+  # default — capture is the most invasive capability (needs a SPAN/tap, libpcap,
+  # and a `-tags pcap` build with elevated privileges). When false, NOTHING is
+  # sniffed; the UniFi poller and active prober still run normally.
+  enabled: false
+  # Each source below is independently optional — run the local interface, the
+  # SPAN, or both. Omit one to disable just that vantage point.
+  sources:
+    - kind: interface        # optional: the sensor's own broadcast domain
+      nic: eth0
+    - kind: span             # optional: a NIC cabled to a switch SPAN/mirror/TAP destination
+      nic: eth1
+      bpf: "arp or (udp port 67 or 68 or 546 or 547) or (udp port 5353) or (udp port 1900) or (udp port 137) or tcp port 443"
+  dedupe_window_ms: 50
+
+active_probe:
+  # OFF by default and ships with NO subnets — the probe scope is never a default.
+  # Turn this on (and add `subnets`) only as a deliberate setup/post-install step.
+  # When enabled, Tessera ACTIVELY probes every address in `subnets` (gentle,
+  # rate-limited, connect-only — never raw/SYN). List only ranges you are
+  # authorized to probe; the scope must be explicit and is never unscoped (§4.2).
+  enabled: false
+  subnets: []                            # REQUIRED to enable; e.g. [10.0.0.0/24]
+  # interface: eth0                      # egress interface; default = the server's
+                                         # default-route interface. Probes never
+                                         # originate from a capture/SPAN NIC.
+  icmp: true
+  # Only the ports you list are probed — there is no default UDP sweep.
+  tcp_ports: [22, 80, 443, 445, 3389, 161]
+  udp_ports: []                          # e.g. [53, 123, 161, 500, 1900, 5353]
+  rate:
+    max_probes_per_sec: 20
+    cycle_interval: 15m
+
+# Discovery techniques — the individual scanning protocols, each ON by default.
+# This whole block is OPTIONAL: omit it (or any key) and every technique stays
+# enabled. Set a key to false to disable just that technique. Passive_* run only
+# when `sensor.enabled`; the rest run only when `active_probe.enabled`. All of
+# this is read-only toward the network. You can also toggle these in the web UI
+# (Settings → Discovery & scanning techniques).
+discovery:
+  # Passive (capture) parsers:
+  passive_arp: true        # ARP + IPv6 NDP — ground-truth MAC↔IP bindings
+  passive_dhcp: true       # DHCPv4/v6 — hostnames, fingerprints, leases
+  passive_mdns: true       # mDNS / Bonjour — hostnames, services
+  passive_ssdp: true       # SSDP / UPnP — device class, OS hints
+  passive_netbios: true    # NetBIOS-NS — Windows names
+  # Active (prober) techniques:
+  active_icmp: true        # ICMP echo liveness (also honored by active_probe.icmp)
+  active_tcp: true         # TCP-connect scan of active_probe.tcp_ports
+  active_udp: true         # UDP service scan of active_probe.udp_ports (no-op if list empty)
+  active_banners: true     # grab light service banners on open ports
+  active_reverse_dns: true # PTR lookups for live hosts
+  active_arp_table: true   # harvest the kernel ARP cache after a sweep
+  active_snmp: true        # SNMP sysName/sysDescr (needs a community string)
+  tcp_behavioral: true     # closed-port timing → weak OS/firewall fingerprint
+  thorough_wake: true      # extra wake pass for power-saving devices (slower sweep)
+
+unifi:
+  enabled: true
+  base_url: https://192.168.10.1     # UniFi OS console
+  path_prefix: /proxy/network        # 8443 software controller -> "" ; OS Server -> use :11443 in base_url
+  site: default                      # controller site name
+  verify_tls: false                  # self-signed; pinning may be added later
+  poll_interval: 5m
+  # username/password OR api_key supplied via env: TESSERA_UNIFI_*
+  #   TESSERA_UNIFI_USERNAME + TESSERA_UNIFI_PASSWORD  (dedicated local read-only admin), OR
+  #   TESSERA_UNIFI_API_KEY                             (Network Application API key)
+
+fingerbank:
+  # OFF by default — privacy (§7). Enabling `api` mode transmits your devices'
+  # DHCP fingerprints to a third party (Akamai); unknown combinations may be
+  # recorded upstream. Use `local_db` for a fully-offline alternative (zero
+  # external calls). Basic OUI vendor attribution is always available offline
+  # regardless of this setting.
+  enabled: false
+  mode: api                          # api | local_db | off
+  rate:
+    max_per_hour: 250                # deliberate margin under the 300/hr free ceiling
+    burst: 10
+  cache_ttl: 720h                    # cache verdicts aggressively, keyed by fingerprint (30d)
+  submit_unknown: false              # do NOT volunteer novel fingerprints upstream
+  # db_path: /var/lib/tessera/fingerbank.db   # required for mode: local_db
+  # api key via env: TESSERA_FINGERBANK_KEY  (required for mode: api)
+
+reconcile:
+  stale_after: 24h
+  free_after: 168h
+  confidence_half_life: 72h
+  compact_interval: 6h    # collapse repeated log rows this often to bound disk; 0 = never
+
+api:
+  enabled: true
+  # Serves the read API + minimal web UI. Binds ALL interfaces by default so it's
+  # reachable on the LAN out of the box; the first visitor creates the admin
+  # account (first-run wizard). Set 127.0.0.1:10404 for localhost-only.
+  listen_addr: 0.0.0.0:10404     # port 10404: uncommon by design — low collision
+  # auth_user: admin             # bootstrap admin username (seeds the first account on
+  #                              # first run). Or just create it in the first-run wizard.
+  # tls: false                   # serve HTTPS (self-signed unless tls_cert_file/tls_key_file set)
+  # require_setup_token: false   # gate first-run behind a one-time token (untrusted networks)
+  # allow_insecure: false        # disable auth entirely (NOT recommended)
+  # Auth/secrets via env (settings UI manages the rest; multiple users + roles in the UI):
+  #   TESSERA_API_PASSWORD_HASH  (bcrypt hash of the bootstrap admin password)
+  #   TESSERA_API_TOKEN          (optional bearer token for scripts/automation)
+  #   TESSERA_SECRET_KEY         (32-byte hex master key — encrypts UI-entered secrets at rest)
+
+storage:
+  driver: sqlite                     # abstracted; postgres swappable later
+  # Production path is /var/lib/tessera/tessera.db. This example uses a
+  # cwd-relative path so `tessera demo` runs out of the box.
+  dsn: tessera.db

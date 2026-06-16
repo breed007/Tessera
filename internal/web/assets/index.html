@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tessera</title>
+  <link rel="icon" type="image/svg+xml" href="icons/tessera-icon.svg">
+  <link rel="apple-touch-icon" href="icons/tessera-icon-1024.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1><img class="logo" src="icons/tessera-icon.svg" alt="">Tessera <span class="tag">discovery-first IPAM</span></h1>
+    <div id="summary" class="summary"></div>
+    <div id="userbar" class="userbar"></div>
+    <details id="export" class="export">
+      <summary>Export ▾</summary>
+      <div class="export-menu">
+        <a href="/api/export/inventory.json">Inventory (JSON)</a>
+        <a href="/api/export/hosts.csv">Hosts (CSV)</a>
+        <a href="/api/export/addresses.csv">Addresses (CSV)</a>
+        <a href="/api/export/subnets.csv">Subnets (CSV)</a>
+        <hr>
+        <a href="/api/export/netbox-ips.csv">NetBox · IP addresses</a>
+        <a href="/api/export/netbox-prefixes.csv">NetBox · prefixes</a>
+        <a href="/api/export/phpipam-addresses.csv">phpIPAM · addresses</a>
+      </div>
+    </details>
+  </header>
+
+  <main>
+    <section id="new-section" class="panel hidden">
+      <h2>New / unexpected devices <span id="new-count" class="badge"></span></h2>
+      <p class="hint">Discovered but not yet marked expected. Review and annotate.</p>
+      <div id="new-list" class="cards"></div>
+    </section>
+
+    <section id="conflict-section" class="panel hidden">
+      <h2>Conflicts <span id="conflict-count" class="badge warn"></span></h2>
+      <p class="hint">Sources disagree on a high-value attribute. The higher-confidence value is current; the disagreement is kept, not hidden.</p>
+      <div id="conflict-list"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Inventory</h2>
+      <table id="hosts">
+        <thead>
+          <tr><th>Name</th><th>Hardware / Device</th><th>Confidence</th><th>Addresses</th><th>Vendor</th><th>Expected</th><th>Last seen</th></tr>
+        </thead>
+        <tbody id="hosts-body"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <aside id="detail" class="detail hidden">
+    <button id="detail-close" class="close">&times;</button>
+    <div id="detail-body"></div>
+  </aside>
+  <div id="overlay" class="overlay hidden"></div>
+
+  <aside id="settings" class="detail settings-panel hidden">
+    <button id="settings-close" class="close">&times;</button>
+    <div id="settings-body"></div>
+  </aside>
+
+  <div id="login" class="login-overlay hidden">
+    <form id="login-form" class="login-card hidden">
+      <img class="logo-lg" src="icons/tessera-icon.svg" alt="">
+      <h2>Tessera</h2>
+      <label>Username</label>
+      <input type="text" id="login-user" autocomplete="username">
+      <label>Password</label>
+      <input type="password" id="login-pass" autocomplete="current-password">
+      <div id="login-error" class="login-error"></div>
+      <button type="submit" class="primary">Sign in</button>
+    </form>
+
+    <form id="setup-form" class="login-card hidden">
+      <img class="logo-lg" src="icons/tessera-icon.svg" alt="">
+      <h2>Welcome to Tessera</h2>
+      <p class="muted-note" style="text-align:center;margin:0 0 6px">First-run setup. Create your admin account.</p>
+      <div id="su-token-row" class="hidden">
+        <label>Setup token</label>
+        <input type="text" id="su-token" placeholder="from the service log / setup-token file">
+      </div>
+      <label>Admin username</label>
+      <input type="text" id="su-user" value="admin">
+      <label>Admin password (8+ chars)</label>
+      <input type="password" id="su-pass">
+      <div id="setup-error" class="login-error"></div>
+      <button type="submit" class="primary">Create account</button>
+    </form>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

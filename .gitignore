@@ -1,0 +1,16 @@
+# Build output
+/tessera
+/dist/
+
+# Local databases (the observation log holds sensitive topology — never commit)
+*.db
+*.db-shm
+*.db-wal
+
+# Any config that may contain a real deployment's values; only the example is tracked.
+/configs/*.yaml
+!/configs/tessera.example.yaml
+
+# Editor / OS noise
+.DS_Store
+*.swp

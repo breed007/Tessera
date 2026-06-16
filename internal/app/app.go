@@ -1,0 +1,395 @@
+// Package app wires Tessera's pieces together and runs the daemon lifecycle:
+// open storage, migrate, start the enabled collectors, and run the reconcile
+// loop until the context is cancelled, then shut down cleanly.
+package app
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"sync"
+	"time"
+
+	"path/filepath"
+
+	"github.com/tessera/tessera/internal/account"
+	"github.com/tessera/tessera/internal/api"
+	"github.com/tessera/tessera/internal/collector"
+	"github.com/tessera/tessera/internal/collector/active"
+	"github.com/tessera/tessera/internal/collector/fingerbank"
+	"github.com/tessera/tessera/internal/collector/passive"
+	"github.com/tessera/tessera/internal/collector/unifi"
+	"github.com/tessera/tessera/internal/config"
+	"github.com/tessera/tessera/internal/observation"
+	"github.com/tessera/tessera/internal/reconcile"
+	"github.com/tessera/tessera/internal/secret"
+	"github.com/tessera/tessera/internal/settings"
+	"github.com/tessera/tessera/internal/store"
+	"github.com/tessera/tessera/internal/store/sqlite"
+)
+
+// App holds the wired-up daemon.
+type App struct {
+	cfg        config.Config // effective config (file + DB settings overlay)
+	log        *slog.Logger
+	store      store.Store
+	recon      *reconcile.Reconciler
+	collectors []collector.Collector
+	api        *api.Server
+	obsBuf     *observation.BufferedAppender // backpressure-tolerant collector write path
+	restart    func()                        // triggers a graceful restart (set by main)
+}
+
+// New builds the App: opens the store, applies DB settings over the file config,
+// bootstraps the admin user, and constructs the enabled collectors from the
+// EFFECTIVE config. The caller owns the lifecycle via Run/Close.
+func New(ctx context.Context, fileCfg config.Config, log *slog.Logger) (*App, error) {
+	st, err := openStore(fileCfg)
+	if err != nil {
+		return nil, err
+	}
+	if err := st.Migrate(ctx); err != nil {
+		_ = st.Close()
+		return nil, fmt.Errorf("app: migrate: %w", err)
+	}
+	log.Info("storage ready", "driver", fileCfg.Storage.Driver, "dsn", fileCfg.Storage.DSN)
+
+	dataDir := filepath.Dir(fileCfg.Storage.DSN)
+
+	// Secrets cipher: use the env key, or load/create a persisted one (§M11).
+	masterKey := fileCfg.Secrets.SecretKey
+	if masterKey == "" {
+		if masterKey, err = loadOrCreateMasterKey(dataDir); err != nil {
+			_ = st.Close()
+			return nil, err
+		}
+	}
+	cipher, err := secret.New(masterKey)
+	if err != nil {
+		_ = st.Close()
+		return nil, fmt.Errorf("app: secret key: %w", err)
+	}
+	settingsSvc := settings.New(st, cipher)
+	cfg, err := settingsSvc.Effective(ctx, fileCfg)
+	if err != nil {
+		_ = st.Close()
+		return nil, fmt.Errorf("app: load settings: %w", err)
+	}
+
+	// Bootstrap the first admin account from the file/env credentials.
+	accounts := account.NewManager(st)
+	if err := accounts.EnsureBootstrapAdmin(ctx, cfg.API.AuthUser, cfg.Secrets.APIPasswordHash); err != nil {
+		_ = st.Close()
+		return nil, fmt.Errorf("app: bootstrap admin: %w", err)
+	}
+	nUsers, _ := st.CountUsers(ctx)
+	authConfigured := cfg.Secrets.APIToken != "" || nUsers > 0
+
+	// First-run mode: no accounts yet → serve the token-gated setup wizard. The
+	// token requires host access, so a LAN bind is safe even while unconfigured.
+	firstRun := !authConfigured && !cfg.API.AllowInsecure
+	var setupToken, setupTokenFile string
+	if firstRun {
+		if cfg.API.RequireSetupToken {
+			// Hardened: completing setup needs a one-time token (host access).
+			if setupToken, setupTokenFile, err = newSetupToken(dataDir); err != nil {
+				_ = st.Close()
+				return nil, err
+			}
+			log.Warn("FIRST-RUN SETUP — browse to the UI and enter the setup token",
+				"token", setupToken, "token_file", setupTokenFile)
+		} else {
+			// Open first-run (default): first person to reach the UI is the admin.
+			log.Warn("FIRST-RUN SETUP — browse to the UI to create your admin account", "addr", cfg.API.ListenAddr)
+		}
+	}
+
+	collectors, err := buildCollectors(cfg, st, log)
+	if err != nil {
+		_ = st.Close()
+		return nil, err
+	}
+
+	a := &App{
+		cfg:        cfg,
+		log:        log,
+		store:      st,
+		collectors: collectors,
+		obsBuf:     observation.NewBufferedAppender(st, 8192, log),
+		recon: reconcile.New(st, log, reconcile.Params{
+			StaleAfter:         cfg.Reconcile.StaleAfter,
+			FreeAfter:          cfg.Reconcile.FreeAfter,
+			ConfidenceHalfLife: cfg.Reconcile.ConfidenceHalfLife,
+		}),
+	}
+
+	if cfg.API.Enabled {
+		// Bind is permitted when auth is configured OR we're in token-gated
+		// first-run OR auth is explicitly disabled (§M8/§M11).
+		if err := api.CheckBindSecurity(cfg.API.ListenAddr, authConfigured || firstRun, cfg.API.AllowInsecure); err != nil {
+			_ = st.Close()
+			return nil, err
+		}
+		a.api = api.New(api.Options{
+			ListenAddr:      cfg.API.ListenAddr,
+			Token:           cfg.Secrets.APIToken,
+			TLS:             api.TLSOptions{Enabled: cfg.API.TLS, CertFile: cfg.API.TLSCertFile, KeyFile: cfg.API.TLSKeyFile},
+			DataDir:         dataDir,
+			AllowInsecure:   cfg.API.AllowInsecure,
+			FirstRun:        firstRun,
+			SetupToken:      setupToken,
+			SetupTokenFile:  setupTokenFile,
+			Accounts:        accounts,
+			Settings:        settingsSvc,
+			EffectiveConfig: cfg,
+			Store:           st,
+			Reconcile:       func(ctx context.Context) error { _, e := a.recon.Rebuild(ctx); return e },
+			OnRestart:       a.requestRestart,
+			Log:             log,
+		})
+	}
+
+	return a, nil
+}
+
+// SetRestart provides the callback that triggers a graceful restart (main wires
+// it to the run-context cancel; the process then exits and systemd restarts it).
+func (a *App) SetRestart(fn func()) { a.restart = fn }
+
+func (a *App) requestRestart() {
+	a.log.Info("restart requested (applying settings)")
+	if a.restart != nil {
+		a.restart()
+	}
+}
+
+// buildCollectors constructs the enabled collectors. Secrets come from
+// cfg.Secrets (env-sourced); they are passed to the collector and never logged.
+func buildCollectors(cfg config.Config, st store.Store, log *slog.Logger) ([]collector.Collector, error) {
+	var cs []collector.Collector
+	disc := cfg.Discovery.Resolve()
+
+	if cfg.Sensor.Enabled && len(cfg.Sensor.Sources) > 0 {
+		sources := make([]passive.CaptureConfig, 0, len(cfg.Sensor.Sources))
+		for _, src := range cfg.Sensor.Sources {
+			sources = append(sources, passive.CaptureConfig{
+				Kind:        src.Kind,
+				NIC:         src.NIC,
+				BPF:         src.BPF,
+				SnapLen:     65535,
+				Promiscuous: true,
+			})
+		}
+		dedupe := time.Duration(cfg.Sensor.DedupeWindowMS) * time.Millisecond
+		protocols := passive.Protocols{
+			ARP: disc.PassiveARP, DHCP: disc.PassiveDHCP, MDNS: disc.PassiveMDNS,
+			SSDP: disc.PassiveSSDP, NetBIOS: disc.PassiveNetBIOS,
+		}
+		s := passive.NewSensor(sources, dedupe, protocols, log)
+		cs = append(cs, s)
+		log.Info("collector enabled", "name", s.Name(), "sources", len(sources))
+	}
+
+	if cfg.ActiveProbe.Enabled {
+		// config validation already guarantees subnets are explicit (§4.2).
+		// Discovery toggles are authoritative for which techniques run (.WithTechniques).
+		p := active.NewProber(active.Config{
+			Subnets:         cfg.ActiveProbe.Subnets,
+			TCPPorts:        cfg.ActiveProbe.TCPPorts,
+			UDPPorts:        cfg.ActiveProbe.UDPPorts,
+			ICMP:            disc.ActiveICMP,
+			TCP:             disc.ActiveTCP,
+			UDP:             disc.ActiveUDP,
+			Banners:         disc.ActiveBanners,
+			ReverseDNS:      disc.ActiveReverseDNS,
+			ARPTable:        disc.ActiveARPTable,
+			SNMP:            disc.ActiveSNMP,
+			TCPBehavioral:   disc.TCPBehavioral,
+			ThoroughWake:    disc.ThoroughWake,
+			SNMPCommunity:   cfg.Secrets.SNMPCommunity,
+			MaxProbesPerSec: cfg.ActiveProbe.Rate.MaxProbesPerSec,
+			CycleInterval:   cfg.ActiveProbe.Rate.CycleInterval,
+			Interface:       cfg.ActiveProbe.Interface,
+		}.WithTechniques(), log)
+		cs = append(cs, p)
+		log.Info("collector enabled", "name", p.Name(),
+			"subnets", len(cfg.ActiveProbe.Subnets), "cycle", cfg.ActiveProbe.Rate.CycleInterval)
+	}
+
+	if cfg.UniFi.Enabled {
+		p, err := unifi.NewPoller(unifi.Config{
+			BaseURL:    cfg.UniFi.BaseURL,
+			PathPrefix: cfg.UniFi.PathPrefix,
+			Site:       cfg.UniFi.Site,
+			VerifyTLS:  cfg.UniFi.VerifyTLS,
+			Auth: unifi.Auth{
+				Username: cfg.Secrets.UniFiUsername,
+				Password: cfg.Secrets.UniFiPassword,
+				APIKey:   cfg.Secrets.UniFiAPIKey,
+			},
+		}, cfg.UniFi.PollInterval, log)
+		if err != nil {
+			return nil, fmt.Errorf("app: build unifi poller: %w", err)
+		}
+		cs = append(cs, p)
+		log.Info("collector enabled", "name", p.Name(), "poll_interval", cfg.UniFi.PollInterval)
+	}
+
+	// Fingerbank is privacy-relevant and OFF by default (§7): only built when
+	// explicitly enabled with a non-off mode.
+	if cfg.Fingerbank.Enabled && cfg.Fingerbank.Mode != "off" && cfg.Fingerbank.Mode != "" {
+		enricher, err := buildEnricher(cfg)
+		if err != nil {
+			return nil, err
+		}
+		fb := fingerbank.NewCollector(enricher, st, time.Minute, log)
+		cs = append(cs, fb)
+		log.Info("collector enabled", "name", fb.Name(), "mode", cfg.Fingerbank.Mode)
+	}
+
+	return cs, nil
+}
+
+// buildEnricher constructs the Fingerbank enricher for the configured mode. The
+// API key (api mode) comes from the environment and is never logged.
+func buildEnricher(cfg config.Config) (fingerbank.Enricher, error) {
+	switch cfg.Fingerbank.Mode {
+	case "api":
+		return fingerbank.NewAPI(fingerbank.APIConfig{
+			Key:        cfg.Secrets.FingerbankKey,
+			MaxPerHour: cfg.Fingerbank.Rate.MaxPerHour,
+			Burst:      cfg.Fingerbank.Rate.Burst,
+			CacheTTL:   cfg.Fingerbank.CacheTTL,
+		})
+	case "local_db":
+		return fingerbank.NewLocalDB(cfg.Fingerbank.DBPath)
+	default:
+		return fingerbank.NewOff(), nil
+	}
+}
+
+// openStore builds the configured storage driver behind the store.Store seam.
+// openStore returns the concrete *sqlite.Store, which satisfies store.Store plus
+// the account.Store and settings.Store capability interfaces used by §M10.
+func openStore(cfg config.Config) (*sqlite.Store, error) {
+	switch cfg.Storage.Driver {
+	case "sqlite":
+		return sqlite.Open(cfg.Storage.DSN)
+	default:
+		return nil, fmt.Errorf("app: unsupported storage driver %q", cfg.Storage.Driver)
+	}
+}
+
+// Store exposes the underlying store (used by the demo/CLI subcommands).
+func (a *App) Store() store.Store { return a.store }
+
+// Reconciler exposes the reconciler (used by the demo/CLI subcommands).
+func (a *App) Reconciler() *reconcile.Reconciler { return a.recon }
+
+// Run starts the collectors (each in its own panic-recovering goroutine) and
+// then periodically rebuilds the entity layer from the log until ctx is
+// cancelled, after which it waits for the collectors to stop.
+func (a *App) Run(ctx context.Context) error {
+	a.log.Info("tessera running", "collectors", len(a.collectors), "reconcile_interval", reconcileInterval)
+
+	var wg sync.WaitGroup
+
+	// The buffered writer drains collector observations into the store; it flushes
+	// remaining buffered rows on shutdown (ctx cancel) before returning.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		a.obsBuf.Run(ctx)
+	}()
+
+	for _, c := range a.collectors {
+		wg.Add(1)
+		go func(c collector.Collector) {
+			defer wg.Done()
+			a.runCollector(ctx, c)
+		}(c)
+	}
+
+	if a.api != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := a.api.ListenAndServe(ctx); err != nil {
+				a.log.Error("api server stopped with error", "err", err)
+			}
+		}()
+	}
+
+	// Periodic log compaction bounds the append-only log's growth (§M9).
+	if iv := a.cfg.Reconcile.CompactInterval; iv > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			a.compactLoop(ctx, iv)
+		}()
+	}
+
+	// Initial reconcile so entities reflect whatever is already in the log.
+	if _, err := a.recon.Rebuild(ctx); err != nil {
+		a.log.Error("initial reconcile failed", "err", err)
+	}
+
+	ticker := time.NewTicker(reconcileInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			a.log.Info("shutdown signal received, stopping collectors")
+			wg.Wait()
+			return nil
+		case <-ticker.C:
+			if _, err := a.recon.Rebuild(ctx); err != nil {
+				a.log.Error("reconcile failed", "err", err)
+			}
+		}
+	}
+}
+
+// compactLoop periodically collapses repeated observations so the append-only
+// log doesn't grow without bound (pollers re-emit identical facts every cycle).
+func (a *App) compactLoop(ctx context.Context, interval time.Duration) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if n, err := a.store.CompactLog(ctx); err != nil {
+				a.log.Error("log compaction failed", "err", err)
+			} else if n > 0 {
+				a.log.Info("log compacted", "rows_removed", n)
+			}
+		}
+	}
+}
+
+// runCollector runs one collector with its own Sink, recovering any panic at the
+// goroutine boundary (§10: no panic crosses into the app).
+func (a *App) runCollector(ctx context.Context, c collector.Collector) {
+	defer func() {
+		if r := recover(); r != nil {
+			a.log.Error("collector panicked (recovered)", "name", c.Name(), "panic", r)
+		}
+	}()
+	sink := observation.NewSink(c.Name(), a.obsBuf)
+	if err := c.Run(ctx, sink); err != nil && ctx.Err() == nil {
+		a.log.Error("collector stopped with error", "name", c.Name(), "err", err)
+	}
+}
+
+// Close releases resources. Safe to call once after Run returns.
+func (a *App) Close() error {
+	a.log.Info("closing storage")
+	return a.store.Close()
+}
+
+// reconcileInterval is the M1 fixed cadence for full rebuilds. M2 makes this
+// incremental and config-driven.
+const reconcileInterval = 30 * time.Second

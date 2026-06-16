@@ -89,9 +89,7 @@ async function openDrill(kind) {
       renderDrill("Observations", ["Time", "Source", "Subject", "Attribute", "Value", "Conf"],
         rows.map((o) => [fmtTime(o.observed_at), o.source, o.subject, o.attribute, o.value, o.confidence]));
     } else if (kind === "subnets") {
-      const rows = await getJSON("/api/subnets");
-      renderDrill("Subnets", ["CIDR", "VLAN", "Name", "Gateway", "Source"],
-        rows.map((s) => [s.cidr, s.vlan_id ?? "—", s.name || "—", s.gateway || "—", s.source]));
+      renderSubnets(await getJSON("/api/subnets"));
     } else if (kind === "conflicts") {
       const rows = await getJSON("/api/conflicts");
       if (!rows.length) { toast("No open conflicts"); return; }
@@ -101,6 +99,30 @@ async function openDrill(kind) {
       document.getElementById("hosts").scrollIntoView({ behavior: "smooth", block: "start" });
     }
   } catch (e) { toast(e.message); }
+}
+
+function renderSubnets(rows) {
+  const cols = ["CIDR", "VLAN", "Name", "Gateway", "Source"];
+  if (me.is_admin) cols.push("");
+  $("detail-body").innerHTML = `<h2>Subnets <span class="badge">${rows.length}</span></h2>
+    <table class="obs"><thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead>
+    <tbody>${rows.map((s) => `<tr>
+      <td class="mono">${esc(s.cidr)}</td><td>${s.vlan_id ?? "—"}</td><td>${esc(s.name || "—")}</td>
+      <td class="mono">${esc(s.gateway || "—")}</td><td>${esc(s.source)}</td>
+      ${me.is_admin ? `<td><button class="ghost rescan-subnet" data-id="${s.id}" data-cidr="${esc(s.cidr)}" title="Actively probe every address in this subnet">↻ Rescan</button></td>` : ""}
+    </tr>`).join("")}</tbody></table>`;
+  for (const b of $("detail-body").querySelectorAll(".rescan-subnet")) {
+    b.onclick = async () => {
+      b.disabled = true; b.textContent = "Scanning…";
+      try {
+        const res = await post("/api/subnet/rescan", { subnet_id: Number(b.dataset.id) });
+        toast(`Scanning ${b.dataset.cidr} — ${res.targets} hosts; results will appear shortly`);
+        // Background scan: refresh the inventory once it has had time to land.
+        setTimeout(refresh, 20000);
+      } catch (e) { toast(e.message); b.disabled = false; b.textContent = "↻ Rescan"; }
+    };
+  }
+  openPanel("detail");
 }
 
 function renderDrill(title, cols, rows) {
@@ -177,8 +199,11 @@ async function openHost(id) {
       <button type="submit" class="primary">Save annotation</button>
     </form>` : "";
 
+  const actions = me.is_admin ? `<div class="detail-actions"><button id="rescan-host" class="ghost" title="Actively probe this host's addresses now">↻ Rescan host</button></div>` : "";
+
   $("detail-body").innerHTML = `
     <h2><img class="dev-icon-lg" src="${esc(d.icon_url)}" alt="">${esc(h.display_name || "(unnamed)")}</h2>
+    ${actions}
     <dl class="kv">
       <dt>Stable ID</dt><dd class="mono">${esc(h.stable_id)}</dd>
       <dt>Hardware / Device</dt><dd>${esc(h.device_class || "—")} ${h.device_class ? confBadge(h.confidence) : ""}</dd>
@@ -203,6 +228,14 @@ async function openHost(id) {
     for (const tile of $("icon-picker").querySelectorAll(".icon-tile")) {
       tile.onclick = async () => { await post("/api/host/annotate", { stable_id: h.stable_id, icon: tile.dataset.icon }); toast("Icon set"); openHost(id); refresh(); };
     }
+    const rb = $("rescan-host");
+    if (rb) rb.onclick = async () => {
+      rb.disabled = true; rb.textContent = "Rescanning…";
+      try {
+        const res = await post("/api/host/rescan", { stable_id: h.stable_id });
+        toast(`Rescanned ${res.probed} address(es)`); openHost(id); refresh();
+      } catch (e) { toast(e.message); rb.disabled = false; rb.textContent = "↻ Rescan host"; }
+    };
   }
   openPanel("detail");
 }

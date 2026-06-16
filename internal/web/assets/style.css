@@ -117,6 +117,11 @@ form.annotate input[type=text]:focus { outline: none; border-color: var(--accent
 form.annotate .row { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
 button.primary { background: var(--accent); color: #06281a; border: none; border-radius: 4px; padding: 7px 16px; font-weight: 700; font-family: var(--mono); cursor: pointer; margin-top: 12px; }
 button.primary:hover { filter: brightness(1.12); }
+button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent-dim); border-radius: 4px; padding: 5px 12px; font-weight: 700; font-family: var(--mono); font-size: 12px; cursor: pointer; }
+button.ghost:hover:not(:disabled) { background: var(--surface-raised); border-color: var(--accent); }
+button.ghost:disabled { opacity: 0.6; cursor: default; }
+.detail-actions { margin: -4px 0 14px; }
+td button.rescan-subnet { padding: 3px 9px; }
 .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--accent); color: #06281a; padding: 8px 16px; border-radius: 4px; font-weight: 700; z-index: 9; }
 
 .export { position: relative; }

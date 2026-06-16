@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -40,7 +41,8 @@ type Options struct {
 	EffectiveConfig config.Config // current effective config (for tests + display)
 	Store           store.Store
 	Reconcile       func(context.Context) error
-	OnRestart       func() // triggers a graceful restart to apply settings
+	Rescan          func(context.Context, []netip.Addr) error // on-demand active probe of explicit targets
+	OnRestart       func()                                    // triggers a graceful restart to apply settings
 
 	Log *slog.Logger
 }
@@ -61,6 +63,7 @@ type Server struct {
 	settings      *settings.Service
 	cfg           config.Config
 	reconcile     func(context.Context) error
+	rescan        func(context.Context, []netip.Addr) error
 	onRestart     func()
 	token         string
 	tls           TLSOptions
@@ -88,6 +91,7 @@ func New(opts Options) *Server {
 		settings:      opts.Settings,
 		cfg:           opts.EffectiveConfig,
 		reconcile:     opts.Reconcile,
+		rescan:        opts.Rescan,
 		onRestart:     opts.OnRestart,
 		token:         opts.Token,
 		tls:           opts.TLS,
@@ -144,6 +148,8 @@ func (s *Server) routes() http.Handler {
 	// Annotation (admin).
 	mux.HandleFunc("POST /api/host/annotate", s.handleAnnotate)
 	mux.HandleFunc("POST /api/address/reserve", s.handleReserve)
+	mux.HandleFunc("POST /api/host/rescan", s.handleRescanHost)
+	mux.HandleFunc("POST /api/subnet/rescan", s.handleRescanSubnet)
 
 	// Settings + users + tests + restart (admin).
 	mux.HandleFunc("GET /api/settings", s.handleGetSettings)

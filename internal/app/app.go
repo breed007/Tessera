@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -38,6 +39,7 @@ type App struct {
 	api        *api.Server
 	obsBuf     *observation.BufferedAppender // backpressure-tolerant collector write path
 	restart    func()                        // triggers a graceful restart (set by main)
+	rescanMu   sync.Mutex                    // serializes on-demand (UI) rescans
 }
 
 // New builds the App: opens the store, applies DB settings over the file config,
@@ -144,6 +146,7 @@ func New(ctx context.Context, fileCfg config.Config, log *slog.Logger) (*App, er
 			EffectiveConfig: cfg,
 			Store:           st,
 			Reconcile:       func(ctx context.Context) error { _, e := a.recon.Rebuild(ctx); return e },
+			Rescan:          a.Rescan,
 			OnRestart:       a.requestRestart,
 			Log:             log,
 		})
@@ -192,25 +195,7 @@ func buildCollectors(cfg config.Config, st store.Store, log *slog.Logger) ([]col
 
 	if cfg.ActiveProbe.Enabled {
 		// config validation already guarantees subnets are explicit (§4.2).
-		// Discovery toggles are authoritative for which techniques run (.WithTechniques).
-		p := active.NewProber(active.Config{
-			Subnets:         cfg.ActiveProbe.Subnets,
-			TCPPorts:        cfg.ActiveProbe.TCPPorts,
-			UDPPorts:        cfg.ActiveProbe.UDPPorts,
-			ICMP:            disc.ActiveICMP,
-			TCP:             disc.ActiveTCP,
-			UDP:             disc.ActiveUDP,
-			Banners:         disc.ActiveBanners,
-			ReverseDNS:      disc.ActiveReverseDNS,
-			ARPTable:        disc.ActiveARPTable,
-			SNMP:            disc.ActiveSNMP,
-			TCPBehavioral:   disc.TCPBehavioral,
-			ThoroughWake:    disc.ThoroughWake,
-			SNMPCommunity:   cfg.Secrets.SNMPCommunity,
-			MaxProbesPerSec: cfg.ActiveProbe.Rate.MaxProbesPerSec,
-			CycleInterval:   cfg.ActiveProbe.Rate.CycleInterval,
-			Interface:       cfg.ActiveProbe.Interface,
-		}.WithTechniques(), log)
+		p := active.NewProber(activeProbeConfig(cfg), log)
 		cs = append(cs, p)
 		log.Info("collector enabled", "name", p.Name(),
 			"subnets", len(cfg.ActiveProbe.Subnets), "cycle", cfg.ActiveProbe.Rate.CycleInterval)
@@ -248,6 +233,47 @@ func buildCollectors(cfg config.Config, st store.Store, log *slog.Logger) ([]col
 	}
 
 	return cs, nil
+}
+
+// activeProbeConfig builds the active prober's Config from the effective config.
+// Shared by the scheduled collector and the on-demand Rescan path; the Discovery
+// toggles are authoritative for which techniques run (.WithTechniques).
+func activeProbeConfig(cfg config.Config) active.Config {
+	disc := cfg.Discovery.Resolve()
+	return active.Config{
+		Subnets:         cfg.ActiveProbe.Subnets,
+		TCPPorts:        cfg.ActiveProbe.TCPPorts,
+		UDPPorts:        cfg.ActiveProbe.UDPPorts,
+		ICMP:            disc.ActiveICMP,
+		TCP:             disc.ActiveTCP,
+		UDP:             disc.ActiveUDP,
+		Banners:         disc.ActiveBanners,
+		ReverseDNS:      disc.ActiveReverseDNS,
+		ARPTable:        disc.ActiveARPTable,
+		SNMP:            disc.ActiveSNMP,
+		TCPBehavioral:   disc.TCPBehavioral,
+		ThoroughWake:    disc.ThoroughWake,
+		SNMPCommunity:   cfg.Secrets.SNMPCommunity,
+		MaxProbesPerSec: cfg.ActiveProbe.Rate.MaxProbesPerSec,
+		CycleInterval:   cfg.ActiveProbe.Rate.CycleInterval,
+		Interface:       cfg.ActiveProbe.Interface,
+	}.WithTechniques()
+}
+
+// Rescan probes the given addresses once on demand (the UI "Rescan" action) and
+// rebuilds the entity layer so the result is immediately visible. It uses a
+// one-shot prober built from the effective config, so it works even when the
+// scheduled active sweep is disabled. Serialized: concurrent rescans queue
+// rather than multiplying the probe rate.
+func (a *App) Rescan(ctx context.Context, targets []netip.Addr) error {
+	a.rescanMu.Lock()
+	defer a.rescanMu.Unlock()
+
+	p := active.NewProber(activeProbeConfig(a.cfg), a.log)
+	sink := observation.NewSink("active", a.obsBuf)
+	p.ProbeOnce(ctx, targets, sink)
+	_, err := a.recon.Rebuild(ctx)
+	return err
 }
 
 // buildEnricher constructs the Fingerbank enricher for the configured mode. The

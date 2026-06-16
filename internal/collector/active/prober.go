@@ -168,30 +168,7 @@ func (p *Prober) sweep(ctx context.Context, sink *observation.Sink) {
 	}
 	p.log.Info("active sweep starting", "targets", len(targets))
 
-	sem := make(chan struct{}, p.concurrency)
-	var wg sync.WaitGroup
-	for _, ip := range targets {
-		if ctx.Err() != nil {
-			break
-		}
-		sem <- struct{}{}
-		wg.Add(1)
-		go func(ip netip.Addr) {
-			defer wg.Done()
-			defer func() { <-sem }()
-			defer func() {
-				if r := recover(); r != nil {
-					p.log.Error("active probe panicked (recovered)", "ip", ip.String(), "panic", r)
-				}
-			}()
-			p.probeHost(ctx, ip, sink)
-		}(ip)
-	}
-	wg.Wait()
-
-	if p.arpTableOn {
-		p.harvestARP(ctx, targets, sink)
-	}
+	p.probeTargets(ctx, targets, sink)
 
 	// Thorough Wake (opt-in, default ON): aggressively power-saving devices
 	// (wired cameras, thermostats, smart plugs, TVs, sleeping phones) often miss
@@ -220,6 +197,72 @@ func (p *Prober) sweep(ctx context.Context, sink *observation.Sink) {
 	}
 
 	p.log.Info("active sweep complete", "targets", len(targets))
+}
+
+// probeTargets probes every address with bounded concurrency, then harvests the
+// kernel ARP cache for the L2 bindings the probing populated. Shared by the
+// scheduled sweep and the on-demand ProbeOnce.
+func (p *Prober) probeTargets(ctx context.Context, targets []netip.Addr, sink *observation.Sink) {
+	sem := make(chan struct{}, p.concurrency)
+	var wg sync.WaitGroup
+	for _, ip := range targets {
+		if ctx.Err() != nil {
+			break
+		}
+		sem <- struct{}{}
+		wg.Add(1)
+		go func(ip netip.Addr) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			defer func() {
+				if r := recover(); r != nil {
+					p.log.Error("active probe panicked (recovered)", "ip", ip.String(), "panic", r)
+				}
+			}()
+			p.probeHost(ctx, ip, sink)
+		}(ip)
+	}
+	wg.Wait()
+
+	if p.arpTableOn {
+		p.harvestARP(ctx, targets, sink)
+	}
+}
+
+// ProbeOnce probes an explicit set of addresses a single time — the engine
+// behind the UI "Rescan" action. It sets up and tears down its own egress
+// binding + ICMP socket, so it works whether or not the scheduled sweep is
+// running, and it ignores the configured scope (the targets are passed in). Best
+// called on a Prober built just for this probe; it shares the same gentleness
+// (rate limiter, bounded concurrency, SPAN-safe egress) as the scheduled sweep.
+func (p *Prober) ProbeOnce(ctx context.Context, targets []netip.Addr, sink *observation.Sink) {
+	if len(targets) == 0 {
+		return
+	}
+	if src, desc, err := resolveSourceIP(p.interfaceName); err != nil {
+		p.log.Warn("rescan: could not bind egress interface, using OS default routing", "err", err)
+	} else {
+		p.sourceIP = src
+		p.log.Info("rescan: egress bound", "interface", desc, "source_ip", src.String())
+	}
+	if p.icmpEnabled {
+		if pinger, err := newICMPPinger(p.sourceIP); err != nil {
+			p.log.Warn("rescan: ICMP unavailable, relying on TCP-connect liveness", "err", err)
+		} else {
+			p.pinger = pinger
+			defer pinger.Close()
+		}
+	}
+	p.log.Info("rescan starting", "targets", len(targets))
+	p.probeTargets(ctx, targets, sink)
+	p.log.Info("rescan complete", "targets", len(targets))
+}
+
+// EnumerateTargets expands subnet CIDRs into the probeable host addresses, with
+// the same scope guards the scheduled sweep uses (skips network/broadcast and
+// over-large ranges). Exposed for the on-demand subnet rescan.
+func EnumerateTargets(cidrs []string) (targets []netip.Addr, skipped []string, err error) {
+	return enumerateTargets(cidrs)
 }
 
 // probeHost runs the probe sequence for one address, emitting only positive

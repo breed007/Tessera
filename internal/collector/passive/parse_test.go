@@ -124,11 +124,35 @@ func TestParseMDNSServices(t *testing.T) {
 	}
 	es := handleMDNS(serialize(t, dns), "aa:bb:cc:00:00:14", "10.0.0.121", now)
 
-	if e := findEmit(es, observation.AttrDeviceClass); e == nil || e.value != "media / TV device" {
-		t.Errorf("mdns service/model device_class wrong: %+v", e)
+	// The exact model name from the TXT record wins over the coarse service class.
+	if e := findEmit(es, observation.AttrDeviceClass); e == nil || e.value != "Apple TV 4K (1st generation)" {
+		t.Errorf("mdns exact model device_class wrong: %+v", e)
 	}
 	if e := findEmit(es, observation.AttrOSGuess); e == nil || e.value != "tvOS" {
 		t.Errorf("mdns model os_guess wrong (want tvOS from model=AppleTV6,2): %+v", e)
+	}
+}
+
+func TestParseMDNSAppleModelPrecise(t *testing.T) {
+	// The user's case: an M4 16" MacBook reports model=Mac16,7 via _device-info.
+	dns := &layers.DNS{
+		QR: true,
+		Answers: []layers.DNSResourceRecord{{
+			Name: []byte("studiombp14._device-info._tcp.local"), Type: layers.DNSTypeTXT, Class: layers.DNSClassIN,
+			TXTs: [][]byte{[]byte("model=Mac16,7")},
+		}},
+	}
+	es := handleMDNS(serialize(t, dns), "aa:bb:cc:dd:ee:10", "10.0.0.42", now)
+	e := findEmit(es, observation.AttrDeviceClass)
+	if e == nil || e.value != "MacBook Pro (16-inch, M4 Pro, Nov 2024)" {
+		t.Fatalf("precise mac model wrong: %+v", e)
+	}
+	// Precise self-report must outrank a UniFi fingerprint (conf 75) so it wins.
+	if e.confidence <= 75 {
+		t.Errorf("precise mDNS model conf = %d, must exceed UniFi fingerprint (75)", e.confidence)
+	}
+	if e := findEmit(es, observation.AttrOSGuess); e == nil || e.value != "macOS" {
+		t.Errorf("mac os_guess wrong: %+v", e)
 	}
 }
 
@@ -145,8 +169,11 @@ func TestMDNSServiceHelpers(t *testing.T) {
 	if dev, _ := classifyMDNSService("_printer"); dev != "printer" {
 		t.Errorf("_printer → %q, want printer", dev)
 	}
-	if dev, os := classifyMDNSModel("Macmini8,1"); dev != "computer" || os != "macOS" {
-		t.Errorf("Macmini8,1 → %q/%q, want computer/macOS", dev, os)
+	if dev, os, precise := classifyMDNSModel("Macmini8,1"); dev != "Mac mini (Late 2018)" || os != "macOS" || !precise {
+		t.Errorf("Macmini8,1 → %q/%q/%v, want exact Mac mini (Late 2018)/macOS/true", dev, os, precise)
+	}
+	if dev, _, precise := classifyMDNSModel("Mac99,9"); dev != "computer" || precise {
+		t.Errorf("unknown mac id → %q/%v, want coarse computer/false", dev, precise)
 	}
 	if got := txtValue([][]byte{[]byte("rpBA=AA"), []byte("model=J305AP")}, "model"); got != "J305AP" {
 		t.Errorf("txtValue model = %q, want J305AP", got)

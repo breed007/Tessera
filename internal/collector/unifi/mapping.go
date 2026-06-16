@@ -97,7 +97,15 @@ func mapDevices(devices []deviceDTO) []emit {
 		if d.Name != "" {
 			out = append(out, emit{observation.SubjectMAC, mac, observation.AttrHostname, d.Name, confHostname})
 		}
-		if dc := deviceClass(d.Type); dc != "" {
+		// Prefer the specific model the controller reports ("UniFi UDM Pro") over a
+		// generic class derived from the coarse device type ("UniFi Gateway").
+		dc := ""
+		if model, ok := resolveUniFiModel(d.Model); ok {
+			dc = "UniFi " + model
+		} else {
+			dc = deviceClass(d.Type)
+		}
+		if dc != "" {
 			out = append(out, emit{observation.SubjectMAC, mac, observation.AttrDeviceClass, dc, confDeviceClass})
 		}
 	}

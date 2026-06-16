@@ -22,14 +22,42 @@ import (
 var fingerprintDevicesJSON []byte
 
 // fingerprintDevices maps a UniFi dev_id to its human-readable model name.
-var fingerprintDevices = mustLoadFingerprints()
+var fingerprintDevices = mustLoadFingerprints(fingerprintDevicesJSON)
 
-func mustLoadFingerprints() map[string]string {
+// unifi_models.json maps a UniFi gear MODEL CODE (the `model` field on a
+// stat/device record, e.g. "U7PG2", "UDMPRO", "USL16P") to a recognizable model
+// name ("UAP AC Pro", "UDM Pro", "USW 16 PoE"). This is the controller's own
+// device list — without it, UniFi gear shows only a generic class derived from
+// the coarse `type` ("uap"/"usw"/…). Source: the UniFi device database
+// (github.com gist sgrodzicki/265273ff0ede952d6fcd1a1eedb6aa60, reduced to
+// code→name). Refresh by replacing the file.
+
+//go:embed unifi_models.json
+var unifiModelsJSON []byte
+
+// unifiModels maps a UniFi gear model code to its product name.
+var unifiModels = mustLoadFingerprints(unifiModelsJSON)
+
+func mustLoadFingerprints(raw []byte) map[string]string {
 	m := map[string]string{}
 	// A malformed bundled file is a build/release problem, not a runtime one; an
-	// empty map simply means no fingerprint resolution (the poller still works).
-	_ = json.Unmarshal(fingerprintDevicesJSON, &m)
+	// empty map simply means no resolution (the poller still works).
+	_ = json.Unmarshal(raw, &m)
 	return m
+}
+
+// resolveUniFiModel turns a stat/device model code into its product name. Codes
+// are upper-case in the controller and in the bundled table.
+func resolveUniFiModel(code string) (string, bool) {
+	code = strings.ToUpper(strings.TrimSpace(code))
+	if code == "" {
+		return "", false
+	}
+	name, ok := unifiModels[code]
+	if !ok || strings.TrimSpace(name) == "" {
+		return "", false
+	}
+	return name, true
 }
 
 // resolveDeviceModel returns the model name for a UniFi dev_id, preferring an

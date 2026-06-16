@@ -44,9 +44,10 @@ const (
 	confDHCPVendor  = 85
 	confMDNSHost    = 75
 	confMDNSBinding = 70
-	confMDNSClass   = 55 // device class from an advertised service type (_airplay, _printer, …)
-	confMDNSOS      = 50 // OS inferred from a service type
-	confMDNSModel   = 70 // device/OS from a TXT model= record (precise, device-reported)
+	confMDNSClass        = 55 // device class from an advertised service type (_airplay, _printer, …)
+	confMDNSOS           = 50 // OS inferred from a service type
+	confMDNSModel        = 88 // EXACT model from a TXT model= the device self-reports; outranks vendor fingerprints (e.g. UniFi at 75)
+	confMDNSModelGeneric = 70 // model= recognized only to device family (no exact-name match)
 	confNBNSHost    = 70
 	confNBNSBinding = 65
 	confSSDPClass   = 50
@@ -239,21 +240,20 @@ func handleMDNS(payload []byte, srcMAC, srcIP string, ts time.Time) []emit {
 		seenHost[name] = true
 		out = append(out, emit{observation.SourcePassiveMDNS, observation.SubjectMAC, srcMAC, observation.AttrHostname, name, confMDNSHost})
 	}
-	seenClass := map[string]bool{}
-	addClass := func(dev string, conf int) {
-		if dev == "" || seenClass[dev] {
-			return
+	// device_class and os_guess are conflict-tracked high-value attributes, so a
+	// host must yield at most ONE of each from mDNS — the highest-confidence
+	// candidate across all its records (an exact model= beats a service type).
+	var bestDev, bestOS string
+	var bestDevConf, bestOSConf int
+	bidDev := func(dev string, conf int) {
+		if dev != "" && conf > bestDevConf {
+			bestDev, bestDevConf = dev, conf
 		}
-		seenClass[dev] = true
-		out = append(out, emit{observation.SourcePassiveMDNS, observation.SubjectMAC, srcMAC, observation.AttrDeviceClass, dev, conf})
 	}
-	seenOS := map[string]bool{}
-	addOS := func(os string, conf int) {
-		if os == "" || seenOS[os] {
-			return
+	bidOS := func(os string, conf int) {
+		if os != "" && conf > bestOSConf {
+			bestOS, bestOSConf = os, conf
 		}
-		seenOS[os] = true
-		out = append(out, emit{observation.SourcePassiveMDNS, observation.SubjectMAC, srcMAC, observation.AttrOSGuess, os, conf})
 	}
 
 	records := append(append([]layers.DNSResourceRecord{}, dns.Answers...), dns.Additionals...)
@@ -267,22 +267,32 @@ func handleMDNS(payload []byte, srcMAC, srcIP string, ts time.Time) []emit {
 		case layers.DNSTypeSRV:
 			addHost(string(rr.Name))
 			if dev, os := classifyMDNSService(mdnsService(string(rr.Name))); dev != "" || os != "" {
-				addClass(dev, confMDNSClass)
-				addOS(os, confMDNSOS)
+				bidDev(dev, confMDNSClass)
+				bidOS(os, confMDNSOS)
 			}
 		case layers.DNSTypePTR:
 			// The service type is in the PTR record name (e.g. "_airplay._tcp.local").
 			if dev, os := classifyMDNSService(mdnsService(string(rr.Name))); dev != "" || os != "" {
-				addClass(dev, confMDNSClass)
-				addOS(os, confMDNSOS)
+				bidDev(dev, confMDNSClass)
+				bidOS(os, confMDNSOS)
 			}
 		case layers.DNSTypeTXT:
 			// _device-info._tcp and friends carry a model= the device reports itself.
-			if dev, os := classifyMDNSModel(txtValue(rr.TXTs, "model")); dev != "" || os != "" {
-				addClass(dev, confMDNSModel)
-				addOS(os, confMDNSModel)
+			if dev, os, precise := classifyMDNSModel(txtValue(rr.TXTs, "model")); dev != "" || os != "" {
+				conf := confMDNSModelGeneric
+				if precise {
+					conf = confMDNSModel
+				}
+				bidDev(dev, conf)
+				bidOS(os, conf)
 			}
 		}
+	}
+	if bestDev != "" {
+		out = append(out, emit{observation.SourcePassiveMDNS, observation.SubjectMAC, srcMAC, observation.AttrDeviceClass, bestDev, bestDevConf})
+	}
+	if bestOS != "" {
+		out = append(out, emit{observation.SourcePassiveMDNS, observation.SubjectMAC, srcMAC, observation.AttrOSGuess, bestOS, bestOSConf})
 	}
 	if srcIP != "" {
 		out = append(out, emit{observation.SourcePassiveMDNS, observation.SubjectMAC, srcMAC, observation.AttrIPBinding, srcIP, confMDNSBinding})
@@ -326,28 +336,39 @@ func classifyMDNSService(svc string) (dev, os string) {
 	return "", ""
 }
 
-// classifyMDNSModel maps a TXT model= value (the device's self-reported model,
-// e.g. "AppleTV6,2", "Macmini8,1", "iPhone14,2", "AudioAccessory5,1") to a class
-// and OS. Cryptic board ids (e.g. "J305AP") are left unclassified rather than
-// guessed.
-func classifyMDNSModel(model string) (dev, os string) {
+// classifyMDNSModel maps a TXT model= value (the device's self-reported model)
+// to a device string and OS. It first resolves the EXACT marketing name from the
+// bundled Apple table — "Mac16,7"/"J516sAP" → "MacBook Pro (16-inch, M4 Pro, Nov
+// 2024)" (precise=true) — and otherwise falls back to a coarse device family
+// from the identifier prefix (precise=false). precise drives the confidence so
+// an exact self-report outranks a vendor fingerprint while a vague family guess
+// does not. A cryptic, unrecognized board id yields nothing rather than a guess.
+func classifyMDNSModel(model string) (dev, os string, precise bool) {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return "", "", false
+	}
+	if name, ok := lookupAppleModel(model); ok {
+		return name, appleOSForName(name), true
+	}
+	// Fallback: coarse family from the identifier prefix (Apple model identifiers).
 	m := strings.ToLower(model)
 	switch {
-	case m == "":
-		return "", ""
 	case strings.HasPrefix(m, "appletv"):
-		return "media / TV device", "tvOS"
+		return "media / TV device", "tvOS", false
 	case strings.HasPrefix(m, "audioaccessory"):
-		return "speaker", ""
-	case strings.HasPrefix(m, "iphone"), strings.HasPrefix(m, "ipad"), strings.HasPrefix(m, "ipod"):
-		return "Apple mobile device", "iOS"
+		return "speaker", "", false
+	case strings.HasPrefix(m, "iphone"), strings.HasPrefix(m, "ipod"):
+		return "Apple mobile device", "iOS", false
+	case strings.HasPrefix(m, "ipad"):
+		return "Apple mobile device", "iPadOS", false
 	case strings.HasPrefix(m, "watch"):
-		return "smartwatch", "watchOS"
+		return "smartwatch", "watchOS", false
 	case strings.HasPrefix(m, "macbook"), strings.HasPrefix(m, "imac"), strings.HasPrefix(m, "macmini"),
 		strings.HasPrefix(m, "macpro"), strings.HasPrefix(m, "macstudio"), strings.HasPrefix(m, "mac"):
-		return "computer", "macOS"
+		return "computer", "macOS", false
 	}
-	return "", ""
+	return "", "", false
 }
 
 // txtValue returns the value of key (case-insensitive) from a set of DNS TXT

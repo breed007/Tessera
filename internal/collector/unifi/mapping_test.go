@@ -125,6 +125,43 @@ func TestMapDevices(t *testing.T) {
 	}
 }
 
+const modelDevicesJSON = `{"meta":{"rc":"ok"},"data":[
+  {"mac":"f0:9f:c2:00:00:01","ip":"10.0.10.3","name":"oasis","type":"uap","model":"U7PG2"},
+  {"mac":"f0:9f:c2:00:00:02","ip":"10.0.10.1","name":"gateway","type":"udm","model":"UDMPRO"},
+  {"mac":"f0:9f:c2:00:00:03","ip":"10.0.10.4","name":"mystery","type":"usw","model":"ZZ-UNKNOWN-99"}
+]}`
+
+func TestMapDevicesModel(t *testing.T) {
+	var devices []deviceDTO
+	if err := decodeData([]byte(modelDevicesJSON), &devices); err != nil {
+		t.Fatal(err)
+	}
+	es := mapDevices(devices)
+	// Known model codes resolve to the specific product name.
+	if e := findEmit(es, observation.AttrDeviceClass, "f0:9f:c2:00:00:01"); e == nil || e.value != "UniFi UAP AC Pro" {
+		t.Errorf("AP model wrong: %+v", e)
+	}
+	if e := findEmit(es, observation.AttrDeviceClass, "f0:9f:c2:00:00:02"); e == nil || e.value != "UniFi UDM Pro" {
+		t.Errorf("gateway model wrong: %+v", e)
+	}
+	// Unknown model code falls back to the coarse type-based class.
+	if e := findEmit(es, observation.AttrDeviceClass, "f0:9f:c2:00:00:03"); e == nil || e.value != "UniFi Switch" {
+		t.Errorf("unknown model should fall back to type class: %+v", e)
+	}
+}
+
+func TestResolveUniFiModel(t *testing.T) {
+	if name, ok := resolveUniFiModel("udmpro"); !ok || name != "UDM Pro" { // case-insensitive
+		t.Errorf("udmpro = %q,%v want UDM Pro,true", name, ok)
+	}
+	if _, ok := resolveUniFiModel("NOPE"); ok {
+		t.Error("unknown code should miss")
+	}
+	if _, ok := resolveUniFiModel(""); ok {
+		t.Error("empty code should miss")
+	}
+}
+
 func TestMapNetworks(t *testing.T) {
 	var networks []networkDTO
 	if err := decodeData([]byte(networksJSON), &networks); err != nil {

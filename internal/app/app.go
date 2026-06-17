@@ -29,6 +29,13 @@ import (
 	"github.com/tessera/tessera/internal/store/sqlite"
 )
 
+// Version (marketing) and Build (YYYY.MM.DD.HH.mm stamp) are set by main from its
+// ldflag-injected values, then surfaced to the UI footer via the API.
+var (
+	Version = "1.0.0"
+	Build   = "dev"
+)
+
 // App holds the wired-up daemon.
 type App struct {
 	cfg        config.Config // effective config (file + DB settings overlay)
@@ -148,6 +155,8 @@ func New(ctx context.Context, fileCfg config.Config, log *slog.Logger) (*App, er
 			Reconcile:       func(ctx context.Context) error { _, e := a.recon.Rebuild(ctx); return e },
 			Rescan:          a.Rescan,
 			Statuses:        a.Statuses,
+			Version:         Version,
+			Build:           Build,
 			OnRestart:       a.requestRestart,
 			Log:             log,
 		})

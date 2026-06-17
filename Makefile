@@ -1,6 +1,7 @@
 # Tessera — common developer + release tasks.
-VERSION ?= dev
-LDFLAGS := -s -w -X main.version=$(VERSION)
+VERSION ?= 1.0.0
+BUILD ?= $(shell date +%Y.%m.%d.%H.%M)
+LDFLAGS := -s -w -X main.version=$(VERSION) -X main.buildNumber=$(BUILD)
 
 .PHONY: build build-pcap test race fmt vet run clean snapshot
 

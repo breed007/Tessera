@@ -21,8 +21,12 @@ import (
 	"github.com/tessera/tessera/internal/config"
 )
 
-// version is overridden at build time via -ldflags "-X main.version=...".
-var version = "0.0.0-dev"
+// version (marketing) and buildNumber (YYYY.MM.DD.HH.mm build stamp) are set at
+// build time via -ldflags "-X main.version=... -X main.buildNumber=...".
+var (
+	version     = "1.0.0"
+	buildNumber = "dev"
+)
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -39,7 +43,7 @@ func run(args []string) error {
 
 	switch cmd {
 	case "version":
-		fmt.Println("tessera " + version)
+		fmt.Printf("tessera %s (build %s)\n", version, buildNumber)
 		return nil
 	case "run":
 		return cmdRun(args)
@@ -98,6 +102,7 @@ func cmdRun(args []string) error {
 	ctx, cancel := context.WithCancel(sigCtx)
 	defer cancel()
 
+	app.Version, app.Build = version, buildNumber
 	a, err := app.New(ctx, cfg, log)
 	if err != nil {
 		return err

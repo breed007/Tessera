@@ -10,6 +10,12 @@ import (
 	"github.com/tessera/tessera/internal/collector/active"
 )
 
+// handleVersion reports the marketing version + build stamp for the UI footer.
+// Public (shown on the login screen too).
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"version": s.version, "build": s.build})
+}
+
 // handleStatus reports collector connection health (UniFi, Fingerbank). Read-only,
 // so any authenticated user may see it.
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {

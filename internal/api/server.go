@@ -44,6 +44,8 @@ type Options struct {
 	Reconcile       func(context.Context) error
 	Rescan          func(context.Context, []netip.Addr) error // on-demand active probe of explicit targets
 	Statuses        func() []collector.Status                 // collector connection health (UniFi, Fingerbank)
+	Version         string                                    // marketing version (footer)
+	Build           string                                    // build stamp YYYY.MM.DD.HH.mm (footer)
 	OnRestart       func()                                    // triggers a graceful restart to apply settings
 
 	Log *slog.Logger
@@ -67,6 +69,8 @@ type Server struct {
 	reconcile     func(context.Context) error
 	rescan        func(context.Context, []netip.Addr) error
 	statuses      func() []collector.Status
+	version       string
+	build         string
 	onRestart     func()
 	token         string
 	tls           TLSOptions
@@ -96,6 +100,8 @@ func New(opts Options) *Server {
 		reconcile:     opts.Reconcile,
 		rescan:        opts.Rescan,
 		statuses:      opts.Statuses,
+		version:       opts.Version,
+		build:         opts.Build,
 		onRestart:     opts.OnRestart,
 		token:         opts.Token,
 		tls:           opts.TLS,
@@ -141,10 +147,12 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/hosts", s.handleHosts)
 	mux.HandleFunc("GET /api/host", s.handleHost)
 	mux.HandleFunc("GET /api/subnets", s.handleSubnets)
+	mux.HandleFunc("GET /api/services", s.handleServices)
 	mux.HandleFunc("GET /api/conflicts", s.handleConflicts)
 	mux.HandleFunc("GET /api/new", s.handleNewDevices)
 	mux.HandleFunc("GET /api/observations", s.handleObservations)
 	mux.HandleFunc("GET /api/status", s.handleStatus)
+	mux.HandleFunc("GET /api/version", s.handleVersion)
 
 	// Export.
 	mux.HandleFunc("GET /api/exports", s.handleExportList)

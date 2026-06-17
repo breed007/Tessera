@@ -29,10 +29,11 @@
   </header>
 
   <main>
-    <section id="new-section" class="panel hidden">
-      <h2>New / unexpected devices <span id="new-count" class="badge"></span></h2>
-      <p class="hint">Discovered but not yet marked expected. Review and annotate.</p>
-      <div id="new-list" class="cards"></div>
+    <section id="devices-section" class="panel">
+      <h2>Devices</h2>
+      <div id="device-tabs" class="tabs"></div>
+      <p id="device-hint" class="hint"></p>
+      <div id="device-list" class="cards"></div>
     </section>
 
 
@@ -54,6 +55,8 @@
       </table>
     </section>
   </main>
+
+  <footer id="footer"></footer>
 
   <aside id="detail" class="detail hidden">
     <button id="detail-close" class="close">&times;</button>

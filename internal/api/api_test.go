@@ -151,3 +151,27 @@ func TestAnnotationReflected(t *testing.T) {
 		t.Errorf("annotation not reflected: %+v", detail.Host)
 	}
 }
+
+func TestIgnoreStatus(t *testing.T) {
+	ts := setup(t)
+	r := authPost(t, ts.URL+"/api/host/annotate", map[string]any{
+		"stable_id": "mac:b8:27:eb:11:22:33", "ignored": true,
+	})
+	if r.StatusCode != 200 {
+		t.Fatalf("annotate ignored → %d", r.StatusCode)
+	}
+	r.Body.Close()
+	detail := getJSON[HostDetail](t, ts.URL+"/api/host?id=mac:b8:27:eb:11:22:33")
+	if !detail.Host.Ignored {
+		t.Errorf("ignored not reflected: %+v", detail.Host)
+	}
+}
+
+func TestVersionEndpoint(t *testing.T) {
+	ts := setup(t)
+	// Public endpoint (no auth needed).
+	v := getJSON[map[string]string](t, ts.URL+"/api/version")
+	if _, ok := v["version"]; !ok {
+		t.Errorf("version endpoint missing version field: %+v", v)
+	}
+}

@@ -42,6 +42,7 @@ type Host struct {
 	Firmware    string    `json:"firmware,omitempty"` // device firmware/version (UniFi gear via the controller)
 	Confidence  int       `json:"confidence"`
 	IsExpected  bool      `json:"is_expected"`
+	Ignored     bool      `json:"ignored"` // operator suppressed this device from review
 	Icon        string    `json:"icon,omitempty"` // operator-chosen icon id; empty → auto (§M12)
 	Notes       string    `json:"notes,omitempty"`
 	FirstSeen   time.Time `json:"first_seen"`

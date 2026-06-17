@@ -82,6 +82,7 @@ const (
 	// Human-annotation attributes (§3.2). Written only by the manual source via
 	// the API; authoritative in reconciliation.
 	AttrIsExpected  Attribute = "is_expected"  // "true"/"false" — device is known/expected
+	AttrIgnored     Attribute = "ignored"      // "true"/"false" — device suppressed from review
 	AttrNotes       Attribute = "notes"        // free-text operator note
 	AttrReservation Attribute = "reservation"  // on an IP: "reserved"
 	AttrDisplayName Attribute = "display_name" // operator-set host name
@@ -95,7 +96,7 @@ var validAttributes = map[Attribute]bool{
 	AttrTCPBehavior: true,
 	AttrSwitchPort:  true, AttrVLANMembership: true, AttrSubnetHint: true,
 	AttrFirstSeen: true, AttrLastSeen: true,
-	AttrIsExpected: true, AttrNotes: true, AttrReservation: true, AttrDisplayName: true, AttrIcon: true,
+	AttrIsExpected: true, AttrIgnored: true, AttrNotes: true, AttrReservation: true, AttrDisplayName: true, AttrIcon: true,
 }
 
 // IsValidAttribute reports whether attr is a known observation attribute.

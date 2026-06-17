@@ -200,7 +200,7 @@ func (e *engine) applyMAC(h *hostAcc, obs observation.Observation) {
 		}
 
 	case observation.AttrHostname, observation.AttrDeviceClass, observation.AttrOSGuess, observation.AttrFirmware,
-		observation.AttrDisplayName, observation.AttrIsExpected, observation.AttrNotes, observation.AttrIcon:
+		observation.AttrDisplayName, observation.AttrIsExpected, observation.AttrIgnored, observation.AttrNotes, observation.AttrIcon:
 		e.hostAttr(h, obs)
 
 	case observation.AttrSwitchPort:
@@ -224,7 +224,7 @@ func (e *engine) applyIP(h *hostAcc, obs observation.Observation) {
 		e.hostAttr(h, obs)
 		e.support(a, obs.ObservedAt)
 	case observation.AttrDeviceClass, observation.AttrOSGuess, observation.AttrTCPBehavior,
-		observation.AttrDisplayName, observation.AttrIsExpected, observation.AttrNotes, observation.AttrIcon:
+		observation.AttrDisplayName, observation.AttrIsExpected, observation.AttrIgnored, observation.AttrNotes, observation.AttrIcon:
 		// IP-subject classification (SNMP), behavioural fingerprint, and IP-keyed
 		// manual annotations.
 		e.hostAttr(h, obs)
@@ -462,6 +462,9 @@ func (e *engine) snapshot() (entity.Snapshot, []conflictRec) {
 		// Human annotations (§3.2): authoritative, manual-only in practice.
 		if w, ok := winnerValue(h.attrs[observation.AttrIsExpected]); ok {
 			host.IsExpected = w == "true"
+		}
+		if w, ok := winnerValue(h.attrs[observation.AttrIgnored]); ok {
+			host.Ignored = w == "true"
 		}
 		if w, ok := winnerValue(h.attrs[observation.AttrNotes]); ok {
 			host.Notes = w

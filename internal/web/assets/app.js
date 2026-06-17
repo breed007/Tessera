@@ -69,15 +69,15 @@ function renderUserbar() {
 // ── inventory (unchanged behavior, admin-gated annotation) ───────────────────
 
 async function refresh() {
-  const [summary, hosts, news] = await Promise.all([
-    getJSON("/api/summary"), getJSON("/api/hosts"), getJSON("/api/new"),
+  const [summary, hosts] = await Promise.all([
+    getJSON("/api/summary"), getJSON("/api/hosts"),
   ]);
-  renderSummary(summary); renderHosts(hosts); renderNew(news);
+  renderSummary(summary); renderHosts(hosts); renderDevices(hosts, summary.open_conflicts);
 }
 function renderSummary(s) {
   const stat = (n, l, d) => `<div class="stat" data-drill="${d}"><b>${n}</b><span>${l}</span></div>`;
   $("summary").innerHTML = stat(s.hosts, "hosts", "inventory") + stat(s.addresses, "addresses", "inventory") +
-    stat(s.subnets, "subnets", "subnets") + stat(s.services, "services", "inventory") +
+    stat(s.subnets, "subnets", "subnets") + stat(s.services, "services", "services") +
     stat(s.open_conflicts, "conflicts", "conflicts") + stat(s.observations, "observations", "observations");
   for (const t of $("summary").querySelectorAll(".stat")) t.onclick = () => openDrill(t.dataset.drill);
 }
@@ -92,10 +92,43 @@ async function openDrill(kind) {
       renderSubnets(await getJSON("/api/subnets"));
     } else if (kind === "conflicts") {
       await openConflicts();
+    } else if (kind === "services") {
+      await openServices();
     } else {
       document.getElementById("hosts").scrollIntoView({ behavior: "smooth", block: "start" });
     }
   } catch (e) { toast(e.message); }
+}
+
+// openServices lists discovered services grouped by friendly name (alphabetical),
+// with unnamed numeric ports last. The API already returns them in that order.
+async function openServices() {
+  const rows = await getJSON("/api/services");
+  let body;
+  if (!rows.length) {
+    body = `<p class="muted-note">No services discovered yet. The active prober populates these as it finds open TCP/UDP ports — set ports under Settings → Active prober, then rescan a host or subnet.</p>`;
+  } else {
+    let html = "", group = null;
+    for (const r of rows) {
+      const label = r.service || `Port ${r.port}`;
+      if (label !== group) {
+        group = label;
+        html += `<h3 class="svc-group">${esc(label)}</h3>`;
+      }
+      html += `<div class="svc-row" data-id="${esc(r.stable_id || "")}">
+        <span class="mono">${esc(r.proto)}/${r.port}</span>
+        <span class="svc-host">${esc(r.host || "(unknown host)")}</span>
+        ${r.banner ? `<span class="src">${esc(r.banner)}</span>` : ""}</div>`;
+    }
+    body = html;
+  }
+  $("detail-body").innerHTML = `<h2>Services <span class="badge">${rows.length}</span></h2>
+    <p class="muted-note">Grouped by service, named services first (alphabetical), then bare ports by number.</p>${body}`;
+  for (const row of $("detail-body").querySelectorAll(".svc-row[data-id]:not([data-id=''])")) {
+    row.style.cursor = "pointer";
+    row.onclick = () => openHost(row.dataset.id);
+  }
+  openPanel("detail");
 }
 
 function renderSubnets(rows) {
@@ -214,17 +247,69 @@ function setupSortHeaders() {
     };
   }
 }
-function renderNew(news) {
-  const sec = $("new-section");
-  if (!news.length) { sec.classList.add("hidden"); return; }
-  sec.classList.remove("hidden"); $("new-count").textContent = news.length;
-  $("new-list").innerHTML = news.map((h) => `
+// Device review workflow: every host is New (unreviewed), Expected (known), or
+// Ignored (suppressed). Conflicts is a cross-cutting tab that opens the conflict
+// page. Tiles move between categories via the per-tile actions (which annotate
+// is_expected / ignored).
+let deviceTab = "new";
+const deviceStatus = (h) => h.ignored ? "ignored" : (h.is_expected ? "expected" : "new");
+const DEVICE_HINTS = {
+  new: "Discovered but not yet reviewed. Mark known devices Expected, or Ignore ones you don't care about.",
+  expected: "Reviewed and known. These are your baseline.",
+  ignored: "Suppressed from the review queue (guests, transient, or noise).",
+};
+
+function renderDevices(hosts, openCount) {
+  hostsData = hosts || hostsData;
+  const groups = { new: [], expected: [], ignored: [] };
+  for (const h of hostsData) groups[deviceStatus(h)].push(h);
+
+  const tab = (key, label, n) => `<button class="tab ${deviceTab === key ? "active" : ""}" data-tab="${key}">${label} <span class="badge">${n}</span></button>`;
+  $("device-tabs").innerHTML =
+    tab("new", "New / Unexpected", groups.new.length) +
+    tab("expected", "Expected", groups.expected.length) +
+    tab("ignored", "Ignored", groups.ignored.length) +
+    `<button class="tab" data-tab="conflicts">Conflicts <span class="badge">${openCount ?? ""}</span></button>`;
+  for (const b of $("device-tabs").querySelectorAll(".tab")) {
+    b.onclick = () => {
+      if (b.dataset.tab === "conflicts") { openConflicts(); return; }
+      deviceTab = b.dataset.tab; renderDevices();
+    };
+  }
+
+  $("device-hint").textContent = DEVICE_HINTS[deviceTab];
+  const list = groups[deviceTab] || [];
+  const admin = me.is_admin;
+  // Per-category quick actions (move the tile to another category).
+  const actions = (h) => {
+    if (!admin) return "";
+    const b = (act, label) => `<button class="ghost dev-act" data-act="${act}" data-id="${esc(h.stable_id)}">${label}</button>`;
+    if (deviceTab === "new") return `<div class="card-actions">${b("expected", "✓ Expected")}${b("ignored", "⊘ Ignore")}</div>`;
+    if (deviceTab === "expected") return `<div class="card-actions">${b("ignored", "⊘ Ignore")}${b("new", "↩ New")}</div>`;
+    return `<div class="card-actions">${b("expected", "✓ Expected")}${b("new", "↩ New")}</div>`; // ignored
+  };
+  $("device-list").innerHTML = list.length ? list.map((h) => `
     <div class="card" data-id="${esc(h.stable_id)}">
-      <div class="name">${esc(h.display_name || "(unnamed)")}</div>
+      <div class="name"><span class="dev-icon" style="${iconStyle(h.icon_url, "var(--accent)")}"></span>${esc(h.display_name || "(unnamed)")}</div>
       <div class="meta mono">${(h.ips || []).map(esc).join(", ") || (h.macs || []).map(esc).join(", ")}</div>
       <div class="meta">${esc(h.device_class || "unclassified")} · first seen ${fmtTime(h.first_seen)}</div>
-    </div>`).join("");
-  for (const c of $("new-list").querySelectorAll(".card")) c.onclick = () => openHost(c.dataset.id);
+      ${actions(h)}
+    </div>`).join("") : `<p class="muted-note">Nothing here.</p>`;
+
+  for (const c of $("device-list").querySelectorAll(".card")) {
+    c.onclick = (e) => { if (!e.target.closest(".dev-act")) openHost(c.dataset.id); };
+  }
+  for (const b of $("device-list").querySelectorAll(".dev-act")) {
+    b.onclick = async () => {
+      const body = { stable_id: b.dataset.id };
+      const act = b.dataset.act;
+      body.is_expected = act === "expected";
+      body.ignored = act === "ignored";
+      b.disabled = true;
+      try { await post("/api/host/annotate", body); toast("Moved to " + act); refresh(); }
+      catch (e) { toast(e.message); b.disabled = false; }
+    };
+  }
 }
 // openConflicts is the dedicated conflict workflow: open disagreements (with a
 // "keep this one" decision + note) and the log of resolved ones (with reopen).
@@ -312,6 +397,7 @@ async function openHost(id) {
       <label>Hardware / Device</label><input type="text" id="an-class" value="${esc(h.device_class || "")}">
       <label>Notes</label><input type="text" id="an-notes" value="${esc(h.notes || "")}">
       <div class="row"><input type="checkbox" id="an-expected" ${h.is_expected ? "checked" : ""}><label for="an-expected" style="margin:0">Mark as expected</label></div>
+      <div class="row"><input type="checkbox" id="an-ignored" ${h.ignored ? "checked" : ""}><label for="an-ignored" style="margin:0">Ignore (suppress from review)</label></div>
       <button type="submit" class="primary">Save annotation</button>
     </form>` : "";
 
@@ -339,7 +425,7 @@ async function openHost(id) {
   if (me.is_admin) {
     $("annotate-form").onsubmit = async (e) => {
       e.preventDefault();
-      await post("/api/host/annotate", { stable_id: h.stable_id, display_name: $("an-name").value, device_class: $("an-class").value, notes: $("an-notes").value, is_expected: $("an-expected").checked });
+      await post("/api/host/annotate", { stable_id: h.stable_id, display_name: $("an-name").value, device_class: $("an-class").value, notes: $("an-notes").value, is_expected: $("an-expected").checked, ignored: $("an-ignored").checked });
       toast("Saved"); closePanels(); refresh();
     };
     for (const tile of $("icon-picker").querySelectorAll(".icon-tile")) {
@@ -597,7 +683,13 @@ $("overlay").onclick = closePanels;
 async function init() {
   try { me = await fetch("/api/me").then((r) => (r.ok ? r.json() : Promise.reject())); }
   catch { showLogin(); return; }
-  hideLogin(); renderUserbar(); setupSortHeaders(); refresh().catch((e) => $("summary").textContent = "error: " + e.message);
+  hideLogin(); renderUserbar(); setupSortHeaders(); renderFooter(); refresh().catch((e) => $("summary").textContent = "error: " + e.message);
+}
+async function renderFooter() {
+  try {
+    const v = await getJSON("/api/version");
+    $("footer").textContent = `Tessera v${v.version}` + (v.build && v.build !== "dev" ? ` · build ${v.build}` : "");
+  } catch { /* footer is best-effort */ }
 }
 init();
 setInterval(() => { if (me && $("login").classList.contains("hidden")) refresh().catch(() => {}); }, 15000);

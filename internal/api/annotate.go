@@ -22,6 +22,7 @@ type annotateRequest struct {
 	DisplayName *string `json:"display_name,omitempty"`
 	DeviceClass *string `json:"device_class,omitempty"`
 	IsExpected  *bool   `json:"is_expected,omitempty"`
+	Ignored     *bool   `json:"ignored,omitempty"`
 	Notes       *string `json:"notes,omitempty"`
 	Icon        *string `json:"icon,omitempty"` // icon id; "" reverts to auto (§M12)
 }
@@ -65,6 +66,12 @@ func (s *Server) handleAnnotate(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.IsExpected != nil {
 		if !rec(observation.AttrIsExpected, boolString(*req.IsExpected)) {
+			return
+		}
+		wrote = true
+	}
+	if req.Ignored != nil {
+		if !rec(observation.AttrIgnored, boolString(*req.Ignored)) {
 			return
 		}
 		wrote = true

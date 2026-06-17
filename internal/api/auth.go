@@ -55,7 +55,7 @@ func (s *Server) publicPath(path string) bool {
 		return true // static UI assets (hold no data)
 	}
 	switch path {
-	case "/api/login", "/api/setup/status":
+	case "/api/login", "/api/setup/status", "/api/version":
 		return true
 	case "/api/setup":
 		return s.firstRun.Load()

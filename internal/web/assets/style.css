@@ -200,6 +200,23 @@ td button.rescan-subnet { padding: 3px 9px; }
 .svc-row { display: flex; gap: 10px; align-items: baseline; padding: 5px 0; border-bottom: 1px solid var(--hairline); font-size: 12px; }
 .svc-row .svc-host { flex: 1; }
 .svc-row:hover { background: var(--surface-raised); }
+/* Subnet address map */
+.ipgrid { display: flex; flex-wrap: wrap; gap: 3px; margin: 6px 0; }
+.ipcell { width: 14px; height: 14px; border-radius: 2px; background: var(--surface-raised); border: 1px solid var(--hairline); display: inline-block; }
+.ipcell.active { background: var(--accent); border-color: var(--accent); }
+.ipcell.stale { background: var(--absent); border-color: var(--absent); }
+.ipcell.reserved { background: #3b82f6; border-color: #3b82f6; }
+.ipcell.free { background: transparent; }
+.ip-legend { display: flex; gap: 14px; font-size: 11px; color: var(--faint); margin: 8px 0; align-items: center; }
+.ip-legend i { width: 11px; height: 11px; margin-right: 5px; vertical-align: -1px; }
+.util { height: 8px; background: var(--surface-raised); border: 1px solid var(--hairline); border-radius: 4px; overflow: hidden; margin: 4px 0 2px; }
+.util-fill { height: 100%; background: var(--accent); }
+/* Device change timeline */
+.changes { background: var(--surface-raised); border: 1px solid var(--hairline); border-radius: 5px; padding: 8px 12px; }
+.change { font-size: 12px; padding: 4px 0; border-bottom: 1px solid var(--hairline); }
+.change:last-child { border-bottom: none; }
+.change b { color: var(--accent); }
+.change-time { color: var(--faint); font-size: 11px; margin-right: 8px; }
 
 /* Discovery & scanning techniques */
 .settings-section h4.sub { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; margin: 14px 0 4px; font-weight: 400; }

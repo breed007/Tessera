@@ -5,9 +5,11 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/tessera/tessera/internal/entity"
+	"github.com/tessera/tessera/internal/observation"
 )
 
 // HostRow is a host plus its bound identities, for the inventory table.
@@ -31,6 +33,16 @@ type HostDetail struct {
 	Services     []entity.Service   `json:"services"`
 	Topology     []entity.Topology  `json:"topology"`
 	Observations []ObservationView  `json:"observations"`
+	Changes      []ChangeView       `json:"changes"`
+}
+
+// ChangeView is one meaningful change derived from the observation history — the
+// device's timeline (IP changed, firmware bumped, a new service appeared).
+type ChangeView struct {
+	At   time.Time `json:"at"`
+	Kind string    `json:"kind"` // ip | firmware | model | os | device | hostname | service
+	From string    `json:"from,omitempty"`
+	To   string    `json:"to,omitempty"`
 }
 
 // ObservationView is one log entry behind an entity (provenance, §1).
@@ -144,7 +156,67 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 			Attribute: string(o.Attribute), Value: o.Value, Confidence: o.Confidence,
 		})
 	}
+	detail.Changes = computeChanges(obs)
 	writeJSON(w, http.StatusOK, detail)
+}
+
+// computeChanges derives a device's change timeline from its raw observations
+// (passed newest-first). It walks chronologically, emitting an entry whenever a
+// tracked attribute's value changes — IP (v4/v6 tracked separately to avoid
+// dual-stack flapping), firmware, model, OS, device class, hostname — and when a
+// new service/port first appears. Returns newest-first, capped.
+func computeChanges(obs []observation.Observation) []ChangeView {
+	asc := make([]observation.Observation, len(obs))
+	for i, o := range obs {
+		asc[len(obs)-1-i] = o
+	}
+	kinds := map[observation.Attribute]string{
+		observation.AttrFirmware:    "firmware",
+		observation.AttrModel:       "model",
+		observation.AttrOSGuess:     "os",
+		observation.AttrDeviceClass: "device",
+		observation.AttrHostname:    "hostname",
+	}
+	last := map[observation.Attribute]string{}
+	var lastIP4, lastIP6 string
+	seenPort := map[string]bool{}
+	var out []ChangeView
+	for _, o := range asc {
+		if kind, ok := kinds[o.Attribute]; ok {
+			if prev, seen := last[o.Attribute]; seen && prev != o.Value && o.Value != "" {
+				out = append(out, ChangeView{At: o.ObservedAt, Kind: kind, From: prev, To: o.Value})
+			}
+			last[o.Attribute] = o.Value
+			continue
+		}
+		switch o.Attribute {
+		case observation.AttrIPBinding:
+			if strings.Contains(o.Value, ":") {
+				if lastIP6 != "" && lastIP6 != o.Value {
+					out = append(out, ChangeView{At: o.ObservedAt, Kind: "ip", From: lastIP6, To: o.Value})
+				}
+				lastIP6 = o.Value
+			} else {
+				if lastIP4 != "" && lastIP4 != o.Value {
+					out = append(out, ChangeView{At: o.ObservedAt, Kind: "ip", From: lastIP4, To: o.Value})
+				}
+				lastIP4 = o.Value
+			}
+		case observation.AttrOpenPort:
+			if !seenPort[o.Value] {
+				seenPort[o.Value] = true
+				out = append(out, ChangeView{At: o.ObservedAt, Kind: "service", To: o.Value})
+			}
+		}
+	}
+	// Newest-first, capped.
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	if len(out) > 50 {
+		out = out[:50]
+	}
+	return out
 }
 
 // handleObservations returns the most recent raw log entries (the observation

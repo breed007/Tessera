@@ -135,12 +135,17 @@ function renderSubnets(rows) {
   const cols = ["CIDR", "VLAN", "Name", "Gateway", "Source"];
   if (me.is_admin) cols.push("");
   $("detail-body").innerHTML = `<h2>Subnets <span class="badge">${rows.length}</span></h2>
+    <p class="muted-note">Click a subnet to see its address map and utilization.</p>
     <table class="obs"><thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead>
-    <tbody>${rows.map((s) => `<tr>
+    <tbody>${rows.map((s) => `<tr class="subnet-row" data-id="${s.id}">
       <td class="mono">${esc(s.cidr)}</td><td>${s.vlan_id ?? "—"}</td><td>${esc(s.name || "—")}</td>
       <td class="mono">${esc(s.gateway || "—")}</td><td>${esc(s.source)}</td>
       ${me.is_admin ? `<td><button class="ghost rescan-subnet" data-id="${s.id}" data-cidr="${esc(s.cidr)}" title="Actively probe every address in this subnet">↻ Rescan</button></td>` : ""}
     </tr>`).join("")}</tbody></table>`;
+  for (const tr of $("detail-body").querySelectorAll(".subnet-row")) {
+    tr.style.cursor = "pointer";
+    tr.onclick = (e) => { if (!e.target.closest(".rescan-subnet")) openSubnet(tr.dataset.id); };
+  }
   for (const b of $("detail-body").querySelectorAll(".rescan-subnet")) {
     b.onclick = async () => {
       b.disabled = true; b.textContent = "Scanning…";
@@ -151,6 +156,43 @@ function renderSubnets(rows) {
         setTimeout(refresh, 20000);
       } catch (e) { toast(e.message); b.disabled = false; b.textContent = "↻ Rescan"; }
     };
+  }
+  openPanel("detail");
+}
+
+// openSubnet shows a subnet's address map: every IP colored by state, with
+// utilization and the next free address.
+async function openSubnet(id) {
+  const d = await getJSON("/api/subnet?id=" + encodeURIComponent(id));
+  const sn = d.subnet;
+  const title = (sn.name ? esc(sn.name) + " · " : "") + esc(sn.cidr);
+  const cells = (d.addresses || []).map((a) =>
+    `<span class="ipcell ${esc(a.state)}" data-id="${esc(a.stable_id || "")}" title="${esc(a.ip)}${a.host ? " · " + esc(a.host) : ""} (${esc(a.state)})"></span>`).join("");
+  const map = d.full_map
+    ? `<div class="ipgrid">${cells}</div>`
+    : `<p class="muted-note">Range too large to map every address — showing the ${d.used} observed addresses.</p><div class="ipgrid">${cells}</div>`;
+  const nextFree = d.next_free ? `<span class="mono">${esc(d.next_free)}</span>` : "—";
+
+  $("detail-body").innerHTML = `
+    <h2>${title}</h2>
+    <dl class="kv">
+      ${sn.vlan_id != null ? `<dt>VLAN</dt><dd>${sn.vlan_id}</dd>` : ""}
+      ${sn.gateway ? `<dt>Gateway</dt><dd class="mono">${esc(sn.gateway)}</dd>` : ""}
+      <dt>Utilization</dt><dd>${d.used} / ${d.total}${d.full_map ? ` (${d.utilization}%)` : ""}</dd>
+      <dt>Free</dt><dd>${d.full_map ? d.free : "—"}</dd>
+      <dt>Next free</dt><dd>${nextFree}</dd>
+    </dl>
+    ${d.full_map ? `<div class="util"><div class="util-fill" style="width:${d.utilization}%"></div></div>` : ""}
+    <div class="ip-legend">
+      <span><i class="ipcell active"></i> active</span>
+      <span><i class="ipcell stale"></i> stale</span>
+      <span><i class="ipcell reserved"></i> reserved</span>
+      <span><i class="ipcell free"></i> free</span>
+    </div>
+    <h3>Addresses</h3>${map}`;
+  for (const c of $("detail-body").querySelectorAll(".ipcell[data-id]:not([data-id=''])")) {
+    c.style.cursor = "pointer";
+    c.onclick = () => openHost(c.dataset.id);
   }
   openPanel("detail");
 }
@@ -396,6 +438,13 @@ async function openHost(id) {
   const addrs = (d.addresses || []).map((a) => `<div class="mono">${esc(a.ip)} <span class="conf">[${esc(a.state)}]</span></div>`).join("") || "—";
   const svcs = (d.services || []).map((s) => `<div class="mono">${esc(s.proto)}/${s.port} ${s.banner ? "· " + esc(s.banner) : ""}</div>`).join("") || "—";
   const topo = (d.topology || []).map((t) => `<div class="mono">${esc(t.switch)} port ${esc(t.switch_port)}</div>`).join("") || "—";
+  const changeLabel = { ip: "IP", firmware: "Firmware", model: "Model", os: "OS", device: "Device", hostname: "Hostname", service: "Service" };
+  const changes = (d.changes || []).map((c) => {
+    const lbl = changeLabel[c.kind] || c.kind;
+    const what = c.kind === "service" ? `New service <b>${esc(c.to)}</b>`
+      : `${lbl}: ${c.from ? esc(c.from) + " → " : ""}<b>${esc(c.to)}</b>`;
+    return `<div class="change"><span class="change-time mono">${fmtTime(c.at)}</span> ${what}</div>`;
+  }).join("");
   const iconPicker = me.is_admin ? `
     <h3>Icon</h3>
     <div class="icon-picker" id="icon-picker">
@@ -432,6 +481,7 @@ async function openHost(id) {
     <h3>Interfaces</h3>${ifaces}<h3>Addresses</h3>${addrs}<h3>Services</h3>${svcs}<h3>Topology</h3>${topo}
     ${iconPicker}
     ${annotate}
+    ${(d.changes || []).length ? `<h3>Changes <span class="badge">${d.changes.length}</span></h3><div class="changes">${changes}</div>` : ""}
     <h3>Observation history <span class="badge">${(d.observations || []).length}</span></h3>
     <table class="obs"><tbody>${rows}</tbody></table>`;
 

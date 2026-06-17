@@ -156,16 +156,32 @@ func TestMapDevicesModel(t *testing.T) {
 	if e := findEmit(es, observation.AttrDeviceClass, "f0:9f:c2:00:00:01"); e == nil || e.value != "UniFi Access Point" {
 		t.Errorf("AP class wrong: %+v", e)
 	}
-	// Unknown model code → no model, only the coarse type-based class.
-	if e := findEmit(es, observation.AttrModel, "f0:9f:c2:00:00:03"); e != nil {
-		t.Errorf("unknown model should not emit a model: %+v", e)
-	}
+	// Unknown model code → coarse class from type, and the RAW code surfaced as the
+	// model (so a table gap is visible/reportable rather than silently dropped).
 	if e := findEmit(es, observation.AttrDeviceClass, "f0:9f:c2:00:00:03"); e == nil || e.value != "UniFi Switch" {
 		t.Errorf("unknown model class wrong: %+v", e)
+	}
+	if e := findEmit(es, observation.AttrModel, "f0:9f:c2:00:00:03"); e == nil || e.value != "ZZ-UNKNOWN-99" {
+		t.Errorf("unknown model should surface the raw code: %+v", e)
 	}
 	// WiFi-7 gear resolves from the current official DB (was missing from the old table).
 	if e := findEmit(es, observation.AttrModel, "f0:9f:c2:00:00:04"); e == nil || e.value != "U7 Pro XG" {
 		t.Errorf("WiFi-7 model wrong: %+v", e)
+	}
+}
+
+func TestMapDevicesModelDisplay(t *testing.T) {
+	// When the controller provides a friendly model_display, it wins over the code.
+	const j = `{"meta":{"rc":"ok"},"data":[
+	  {"mac":"f0:9f:c2:00:00:09","ip":"10.0.10.9","name":"sw","type":"usw","model":"ZZUNKNOWN","model_display":"USW Flex 2.5G 5"}
+	]}`
+	var devices []deviceDTO
+	if err := decodeData([]byte(j), &devices); err != nil {
+		t.Fatal(err)
+	}
+	es := mapDevices(devices)
+	if e := findEmit(es, observation.AttrModel, "f0:9f:c2:00:00:09"); e == nil || e.value != "USW Flex 2.5G 5" {
+		t.Errorf("model_display should win: %+v", e)
 	}
 }
 

@@ -106,8 +106,16 @@ func mapDevices(devices []deviceDTO) []emit {
 		if dc := deviceClass(d.Type); dc != "" {
 			out = append(out, emit{observation.SubjectMAC, mac, observation.AttrDeviceClass, dc, confDeviceClass})
 		}
-		if model, ok := resolveUniFiModel(d.Model); ok {
-			out = append(out, emit{observation.SubjectMAC, mac, observation.AttrModel, model, confUniFiModel})
+		// Prefer the friendly product name from the bundled DB; if the controller's
+		// model code isn't in it, surface the raw code so the model is still shown
+		// (and any table gap is visible and reportable). model_display, when the
+		// controller provides it, is the most authoritative.
+		if disp := strings.TrimSpace(d.ModelDisplay); disp != "" {
+			out = append(out, emit{observation.SubjectMAC, mac, observation.AttrModel, disp, confUniFiModel})
+		} else if name, ok := resolveUniFiModel(d.Model); ok {
+			out = append(out, emit{observation.SubjectMAC, mac, observation.AttrModel, name, confUniFiModel})
+		} else if code := strings.TrimSpace(d.Model); code != "" {
+			out = append(out, emit{observation.SubjectMAC, mac, observation.AttrModel, code, confUniFiModel})
 		}
 		if v := strings.TrimSpace(d.Version); v != "" {
 			out = append(out, emit{observation.SubjectMAC, mac, observation.AttrFirmware, v, confFirmware})

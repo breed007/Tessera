@@ -79,6 +79,11 @@ func (p *Poller) pollOnce(ctx context.Context, sink *observation.Sink) error {
 	if devices, err := p.client.fetchDevices(ctx); err != nil {
 		firstErr = errOnce(firstErr, err)
 	} else {
+		for _, d := range devices {
+			// Surfaces the exact model code the controller reports — handy when a
+			// code isn't in the bundled name table (run with -debug).
+			p.log.Debug("unifi device", "name", d.Name, "type", d.Type, "model", d.Model, "model_display", d.ModelDisplay, "version", d.Version)
+		}
 		emits = append(emits, mapDevices(devices)...)
 	}
 	if networks, err := p.client.fetchNetworks(ctx); err != nil {

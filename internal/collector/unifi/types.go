@@ -67,12 +67,13 @@ type clientDTO struct {
 // deviceDTO is a subset of a UniFi device record (stat/device) — the UniFi gear
 // itself (APs, switches, gateways).
 type deviceDTO struct {
-	MAC     string `json:"mac"`
-	IP      string `json:"ip"`
-	Name    string `json:"name"`
-	Model   string `json:"model"`
-	Type    string `json:"type"`    // usw | uap | ugw | udm | uxg ...
-	Version string `json:"version"` // running firmware, e.g. "8.7.5"
+	MAC          string `json:"mac"`
+	IP           string `json:"ip"`
+	Name         string `json:"name"`
+	Model        string `json:"model"`         // short code, e.g. "USPXG10P"
+	ModelDisplay string `json:"model_display"` // friendly name when the controller provides it, e.g. "USW Pro XG 10 PoE"
+	Type         string `json:"type"`          // usw | uap | ugw | udm | uxg ...
+	Version      string `json:"version"`        // running firmware, e.g. "8.7.5"
 }
 
 // networkDTO is a subset of a configured network (rest/networkconf).

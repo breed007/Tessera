@@ -53,14 +53,25 @@ func resolveUniFiModel(code string) (string, bool) {
 	if code == "" {
 		return "", false
 	}
-	name, ok := unifiModels[code]
-	if !ok {
-		name, ok = unifiModels[strings.ReplaceAll(code, "-", "")] // tolerate dashed codes
+	if name, ok := unifiModels[code]; ok && name != "" {
+		return name, true
 	}
-	if !ok || strings.TrimSpace(name) == "" {
-		return "", false
+	// Tolerate punctuation/case differences between the controller's code and the
+	// table keys (e.g. "USW-Pro-XG" vs "USWPROXG").
+	norm := func(s string) string {
+		var b strings.Builder
+		for _, r := range strings.ToUpper(s) {
+			if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+				b.WriteRune(r)
+			}
+		}
+		return b.String()
 	}
-	return name, true
+	want := norm(code)
+	if name, ok := unifiModels[want]; ok && name != "" {
+		return name, true
+	}
+	return "", false
 }
 
 // resolveDeviceModel returns the model name for a UniFi dev_id, preferring an

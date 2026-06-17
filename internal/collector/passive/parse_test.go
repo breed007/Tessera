@@ -124,9 +124,13 @@ func TestParseMDNSServices(t *testing.T) {
 	}
 	es := handleMDNS(serialize(t, dns), "aa:bb:cc:00:00:14", "10.0.0.121", now)
 
-	// The exact model name from the TXT record wins over the coarse service class.
-	if e := findEmit(es, observation.AttrDeviceClass); e == nil || e.value != "Apple TV 4K (1st generation)" {
-		t.Errorf("mdns exact model device_class wrong: %+v", e)
+	// The exact model name from the TXT record lands in model; the service type
+	// still classifies the device.
+	if e := findEmit(es, observation.AttrModel); e == nil || e.value != "Apple TV 4K (1st generation)" {
+		t.Errorf("mdns exact model wrong: %+v", e)
+	}
+	if e := findEmit(es, observation.AttrDeviceClass); e == nil || e.value != "media / TV device" {
+		t.Errorf("mdns service device_class wrong: %+v", e)
 	}
 	if e := findEmit(es, observation.AttrOSGuess); e == nil || e.value != "tvOS" {
 		t.Errorf("mdns model os_guess wrong (want tvOS from model=AppleTV6,2): %+v", e)
@@ -143,7 +147,7 @@ func TestParseMDNSAppleModelPrecise(t *testing.T) {
 		}},
 	}
 	es := handleMDNS(serialize(t, dns), "aa:bb:cc:dd:ee:10", "10.0.0.42", now)
-	e := findEmit(es, observation.AttrDeviceClass)
+	e := findEmit(es, observation.AttrModel)
 	if e == nil || e.value != "MacBook Pro (16-inch, M4 Pro, Nov 2024)" {
 		t.Fatalf("precise mac model wrong: %+v", e)
 	}

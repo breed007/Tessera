@@ -34,6 +34,7 @@ const (
 	confDeviceClass = 75
 	confSubnet      = 95
 	confFirmware    = 90 // first-party fact straight from the controller
+	confUniFiModel  = 85 // controller-reported gear model (mDNS self-report still outranks it)
 	// OS derived from a fingerprinted model name — a notch below the model itself,
 	// which is the directly-reported fact.
 	confFingerprintOS = 70
@@ -71,10 +72,12 @@ func mapClients(clients []clientDTO) []emit {
 			out = append(out, emit{observation.SubjectMAC, mac, observation.AttrVLANMembership, strconv.Itoa(c.VLAN.Val), confVLAN})
 		}
 		// First-party device fingerprint: UniFi already matched this client against
-		// its device database. Resolve the id to a model name, emit it as the device
-		// class, and add an OS where the model name makes it unambiguous.
+		// its device database. The dev_id name is a hardware model → emit it as the
+		// model (mDNS self-report outranks it), plus an OS where the name is clear.
+		// Note: UniFi's fingerprint is partly icon/association-based, so it's a
+		// fallback below the device's own mDNS report.
 		if model, ok := resolveDeviceModel(c.DevID, c.DevIDOverride); ok {
-			out = append(out, emit{observation.SubjectMAC, mac, observation.AttrDeviceClass, model, confDeviceClass})
+			out = append(out, emit{observation.SubjectMAC, mac, observation.AttrModel, model, confDeviceClass})
 			if os := osFromModel(model); os != "" {
 				out = append(out, emit{observation.SubjectMAC, mac, observation.AttrOSGuess, os, confFingerprintOS})
 			}
@@ -98,16 +101,13 @@ func mapDevices(devices []deviceDTO) []emit {
 		if d.Name != "" {
 			out = append(out, emit{observation.SubjectMAC, mac, observation.AttrHostname, d.Name, confHostname})
 		}
-		// Prefer the specific model the controller reports ("UniFi UDM Pro") over a
-		// generic class derived from the coarse device type ("UniFi Gateway").
-		dc := ""
-		if model, ok := resolveUniFiModel(d.Model); ok {
-			dc = "UniFi " + model
-		} else {
-			dc = deviceClass(d.Type)
-		}
-		if dc != "" {
+		// device_class is the coarse class (Access Point / Switch / Gateway); the
+		// specific product name goes to the separate model field.
+		if dc := deviceClass(d.Type); dc != "" {
 			out = append(out, emit{observation.SubjectMAC, mac, observation.AttrDeviceClass, dc, confDeviceClass})
+		}
+		if model, ok := resolveUniFiModel(d.Model); ok {
+			out = append(out, emit{observation.SubjectMAC, mac, observation.AttrModel, model, confUniFiModel})
 		}
 		if v := strings.TrimSpace(d.Version); v != "" {
 			out = append(out, emit{observation.SubjectMAC, mac, observation.AttrFirmware, v, confFirmware})

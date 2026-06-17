@@ -75,23 +75,23 @@ func TestMapClientsFingerprint(t *testing.T) {
 	}
 	es := mapClients(clients)
 
-	// dev_id 14 → "Apple TV HD" → device_class, and tvOS derived from the model.
-	if e := findEmit(es, observation.AttrDeviceClass, "aa:bb:cc:00:00:14"); e == nil || e.value != "Apple TV HD" {
-		t.Errorf("fingerprint device_class wrong: %+v", e)
+	// dev_id 14 → "Apple TV HD" → model, and tvOS derived from the model.
+	if e := findEmit(es, observation.AttrModel, "aa:bb:cc:00:00:14"); e == nil || e.value != "Apple TV HD" {
+		t.Errorf("fingerprint model wrong: %+v", e)
 	}
 	if e := findEmit(es, observation.AttrOSGuess, "aa:bb:cc:00:00:14"); e == nil || e.value != "tvOS" {
 		t.Errorf("fingerprint os_guess wrong: %+v", e)
 	}
 	// dev_id_override (7 → "Apple iPhone SE") wins over dev_id (4 → iPhone 7).
-	if e := findEmit(es, observation.AttrDeviceClass, "11:22:33:44:55:66"); e == nil || e.value != "Apple iPhone SE" {
+	if e := findEmit(es, observation.AttrModel, "11:22:33:44:55:66"); e == nil || e.value != "Apple iPhone SE" {
 		t.Errorf("override should win: %+v", e)
 	}
 	if e := findEmit(es, observation.AttrOSGuess, "11:22:33:44:55:66"); e == nil || e.value != "iOS" {
 		t.Errorf("iphone os_guess wrong: %+v", e)
 	}
 	// dev_id 0 (unset) → no fingerprint observation.
-	if e := findEmit(es, observation.AttrDeviceClass, "99:88:77:66:55:44"); e != nil {
-		t.Errorf("dev_id 0 should not emit a class: %+v", e)
+	if e := findEmit(es, observation.AttrModel, "99:88:77:66:55:44"); e != nil {
+		t.Errorf("dev_id 0 should not emit a model: %+v", e)
 	}
 }
 
@@ -117,9 +117,12 @@ func TestMapDevices(t *testing.T) {
 		t.Fatal(err)
 	}
 	es := mapDevices(devices)
-	// Resolves the model code to its product name (from the bundled UniFi DB).
-	if e := findEmit(es, observation.AttrDeviceClass, "f0:9f:c2:aa:bb:cc"); e == nil || e.value != "UniFi USW 24 PoE" {
+	// device_class is the coarse class; the specific product name is the model.
+	if e := findEmit(es, observation.AttrDeviceClass, "f0:9f:c2:aa:bb:cc"); e == nil || e.value != "UniFi Switch" {
 		t.Errorf("device_class wrong: %+v", e)
+	}
+	if e := findEmit(es, observation.AttrModel, "f0:9f:c2:aa:bb:cc"); e == nil || e.value != "USW 24 PoE" {
+		t.Errorf("model wrong: %+v", e)
 	}
 	if e := findEmit(es, observation.AttrHostname, "f0:9f:c2:aa:bb:cc"); e == nil || e.value != "office-sw" {
 		t.Errorf("device hostname wrong: %+v", e)
@@ -142,19 +145,26 @@ func TestMapDevicesModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	es := mapDevices(devices)
-	// Known model codes resolve to the specific product name.
-	if e := findEmit(es, observation.AttrDeviceClass, "f0:9f:c2:00:00:01"); e == nil || e.value != "UniFi AC Pro" {
+	// Known model codes resolve to the specific product name (the model field).
+	if e := findEmit(es, observation.AttrModel, "f0:9f:c2:00:00:01"); e == nil || e.value != "AC Pro" {
 		t.Errorf("AP model wrong: %+v", e)
 	}
-	if e := findEmit(es, observation.AttrDeviceClass, "f0:9f:c2:00:00:02"); e == nil || e.value != "UniFi UDM Pro" {
+	if e := findEmit(es, observation.AttrModel, "f0:9f:c2:00:00:02"); e == nil || e.value != "UDM Pro" {
 		t.Errorf("gateway model wrong: %+v", e)
 	}
-	// Unknown model code falls back to the coarse type-based class.
+	// The coarse class always comes from the device type.
+	if e := findEmit(es, observation.AttrDeviceClass, "f0:9f:c2:00:00:01"); e == nil || e.value != "UniFi Access Point" {
+		t.Errorf("AP class wrong: %+v", e)
+	}
+	// Unknown model code → no model, only the coarse type-based class.
+	if e := findEmit(es, observation.AttrModel, "f0:9f:c2:00:00:03"); e != nil {
+		t.Errorf("unknown model should not emit a model: %+v", e)
+	}
 	if e := findEmit(es, observation.AttrDeviceClass, "f0:9f:c2:00:00:03"); e == nil || e.value != "UniFi Switch" {
-		t.Errorf("unknown model should fall back to type class: %+v", e)
+		t.Errorf("unknown model class wrong: %+v", e)
 	}
 	// WiFi-7 gear resolves from the current official DB (was missing from the old table).
-	if e := findEmit(es, observation.AttrDeviceClass, "f0:9f:c2:00:00:04"); e == nil || e.value != "UniFi U7 Pro XG" {
+	if e := findEmit(es, observation.AttrModel, "f0:9f:c2:00:00:04"); e == nil || e.value != "U7 Pro XG" {
 		t.Errorf("WiFi-7 model wrong: %+v", e)
 	}
 }

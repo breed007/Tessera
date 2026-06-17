@@ -199,7 +199,7 @@ func (e *engine) applyMAC(h *hostAcc, obs observation.Observation) {
 			iface.oui.add(e.score(obs))
 		}
 
-	case observation.AttrHostname, observation.AttrDeviceClass, observation.AttrOSGuess, observation.AttrFirmware,
+	case observation.AttrHostname, observation.AttrDeviceClass, observation.AttrOSGuess, observation.AttrFirmware, observation.AttrModel,
 		observation.AttrDisplayName, observation.AttrIsExpected, observation.AttrIgnored, observation.AttrNotes, observation.AttrIcon:
 		e.hostAttr(h, obs)
 
@@ -223,7 +223,7 @@ func (e *engine) applyIP(h *hostAcc, obs observation.Observation) {
 	case observation.AttrHostname:
 		e.hostAttr(h, obs)
 		e.support(a, obs.ObservedAt)
-	case observation.AttrDeviceClass, observation.AttrOSGuess, observation.AttrTCPBehavior,
+	case observation.AttrDeviceClass, observation.AttrOSGuess, observation.AttrTCPBehavior, observation.AttrModel,
 		observation.AttrDisplayName, observation.AttrIsExpected, observation.AttrIgnored, observation.AttrNotes, observation.AttrIcon:
 		// IP-subject classification (SNMP), behavioural fingerprint, and IP-keyed
 		// manual annotations.
@@ -474,6 +474,9 @@ func (e *engine) snapshot() (entity.Snapshot, []conflictRec) {
 		}
 		if w, ok := winnerValue(h.attrs[observation.AttrFirmware]); ok {
 			host.Firmware = w
+		}
+		if w, ok := winnerValue(h.attrs[observation.AttrModel]); ok {
+			host.Model = w
 		}
 		if s, ok := winnerScored(h.attrs[observation.AttrDeviceClass]); ok {
 			host.DeviceClass = s.obs.Value

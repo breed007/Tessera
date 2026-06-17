@@ -71,6 +71,7 @@ const (
 	AttrDeviceClass     Attribute = "device_class"
 	AttrOSGuess         Attribute = "os_guess"
 	AttrFirmware        Attribute = "firmware" // device firmware/version (e.g. UniFi gear)
+	AttrModel           Attribute = "model"    // precise hardware model (mDNS self-report > UniFi)
 	AttrOpenPort        Attribute = "open_port"
 	AttrServiceBanner   Attribute = "service_banner"
 	AttrTCPBehavior     Attribute = "tcp_behavior" // closed-port behaviour: rst_immediate|silent_drop|icmp_unreachable
@@ -92,7 +93,7 @@ const (
 var validAttributes = map[Attribute]bool{
 	AttrIPBinding: true, AttrLiveness: true, AttrHostname: true, AttrOUIVendor: true,
 	AttrDHCPFingerprint: true, AttrDHCPVendor: true, AttrUserAgent: true,
-	AttrDeviceClass: true, AttrOSGuess: true, AttrFirmware: true, AttrOpenPort: true, AttrServiceBanner: true,
+	AttrDeviceClass: true, AttrOSGuess: true, AttrFirmware: true, AttrModel: true, AttrOpenPort: true, AttrServiceBanner: true,
 	AttrTCPBehavior: true,
 	AttrSwitchPort:  true, AttrVLANMembership: true, AttrSubnetHint: true,
 	AttrFirstSeen: true, AttrLastSeen: true,

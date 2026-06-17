@@ -191,7 +191,7 @@ let hostSort = { key: null, dir: 1 };
 // sortKeyFns map each sortable column to a comparable value for a host row.
 const sortKeyFns = {
   name: (h) => (h.display_name || "").toLowerCase(),
-  device: (h) => (h.device_class || "").toLowerCase(),
+  device: (h) => (h.model || h.device_class || "").toLowerCase(),
   conf: (h) => ((h.device_class || h.os_guess) ? h.confidence : 0) || 0,
   addr: (h) => ipSortKey((h.ips || [])[0]),
   vendor: (h) => (h.vendor || "").toLowerCase(),
@@ -222,7 +222,7 @@ function renderHosts(hosts) {
   $("hosts-body").innerHTML = rows.map((h) => `
     <tr data-id="${esc(h.stable_id)}">
       <td><span class="dev-icon" style="${iconStyle(h.icon_url, "var(--accent)")}"></span>${esc(h.display_name || "(unnamed)")}</td>
-      <td>${esc(h.device_class || "—")}</td>
+      <td>${esc(h.model || h.device_class || "—")}</td>
       <td class="conf">${confBadge(h.device_class || h.os_guess ? h.confidence : 0)}</td>
       <td class="mono">${(h.ips || []).map(esc).join(", ") || "—"}</td>
       <td>${esc(h.vendor || "")}</td>
@@ -292,7 +292,7 @@ function renderDevices(hosts, openCount) {
     <div class="card" data-id="${esc(h.stable_id)}">
       <div class="name"><span class="dev-icon" style="${iconStyle(h.icon_url, "var(--accent)")}"></span>${esc(h.display_name || "(unnamed)")}</div>
       <div class="meta mono">${(h.ips || []).map(esc).join(", ") || (h.macs || []).map(esc).join(", ")}</div>
-      <div class="meta">${esc(h.device_class || "unclassified")} · first seen ${fmtTime(h.first_seen)}</div>
+      <div class="meta">${esc(h.model || h.device_class || "unclassified")} · first seen ${fmtTime(h.first_seen)}</div>
       ${actions(h)}
     </div>`).join("") : `<p class="muted-note">Nothing here.</p>`;
 
@@ -394,7 +394,7 @@ async function openHost(id) {
     <h3>Annotate</h3>
     <form class="annotate" id="annotate-form">
       <label>Display name</label><input type="text" id="an-name" value="${esc(h.display_name || "")}">
-      <label>Hardware / Device</label><input type="text" id="an-class" value="${esc(h.device_class || "")}">
+      <label>Device / Hardware</label><input type="text" id="an-class" value="${esc(h.device_class || "")}">
       <label>Notes</label><input type="text" id="an-notes" value="${esc(h.notes || "")}">
       <div class="row"><input type="checkbox" id="an-expected" ${h.is_expected ? "checked" : ""}><label for="an-expected" style="margin:0">Mark as expected</label></div>
       <div class="row"><input type="checkbox" id="an-ignored" ${h.ignored ? "checked" : ""}><label for="an-ignored" style="margin:0">Ignore (suppress from review)</label></div>
@@ -408,7 +408,8 @@ async function openHost(id) {
     ${actions}
     <dl class="kv">
       <dt>Stable ID</dt><dd class="mono">${esc(h.stable_id)}</dd>
-      <dt>Hardware / Device</dt><dd>${esc(h.device_class || "—")} ${h.device_class ? confBadge(h.confidence) : ""}</dd>
+      <dt>Device / Hardware</dt><dd>${esc(h.device_class || "—")} ${h.device_class ? confBadge(h.confidence) : ""}</dd>
+      ${h.model ? `<dt>Model</dt><dd>${esc(h.model)}</dd>` : ""}
       <dt>Operating System</dt><dd>${esc(h.os_guess || "—")} ${h.os_guess ? confBadge(h.confidence) : ""}</dd>
       ${h.firmware ? `<dt>Firmware</dt><dd class="mono">${esc(h.firmware)}</dd>` : ""}
       <dt>Expected</dt><dd>${expectedPill(h.is_expected)}</dd>

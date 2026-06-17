@@ -243,8 +243,8 @@ func handleMDNS(payload []byte, srcMAC, srcIP string, ts time.Time) []emit {
 	// device_class and os_guess are conflict-tracked high-value attributes, so a
 	// host must yield at most ONE of each from mDNS — the highest-confidence
 	// candidate across all its records (an exact model= beats a service type).
-	var bestDev, bestOS string
-	var bestDevConf, bestOSConf int
+	var bestDev, bestOS, bestModel string
+	var bestDevConf, bestOSConf, bestModelConf int
 	bidDev := func(dev string, conf int) {
 		if dev != "" && conf > bestDevConf {
 			bestDev, bestDevConf = dev, conf
@@ -253,6 +253,11 @@ func handleMDNS(payload []byte, srcMAC, srcIP string, ts time.Time) []emit {
 	bidOS := func(os string, conf int) {
 		if os != "" && conf > bestOSConf {
 			bestOS, bestOSConf = os, conf
+		}
+	}
+	bidModel := func(m string, conf int) {
+		if m != "" && conf > bestModelConf {
+			bestModel, bestModelConf = m, conf
 		}
 	}
 
@@ -278,18 +283,23 @@ func handleMDNS(payload []byte, srcMAC, srcIP string, ts time.Time) []emit {
 			}
 		case layers.DNSTypeTXT:
 			// _device-info._tcp and friends carry a model= the device reports itself.
+			// An exact match is a precise hardware model; a prefix-only match is a
+			// coarse family (a device class). The device's own report is authoritative.
 			if dev, os, precise := classifyMDNSModel(txtValue(rr.TXTs, "model")); dev != "" || os != "" {
-				conf := confMDNSModelGeneric
 				if precise {
-					conf = confMDNSModel
+					bidModel(dev, confMDNSModel)
+				} else {
+					bidDev(dev, confMDNSModelGeneric)
 				}
-				bidDev(dev, conf)
-				bidOS(os, conf)
+				bidOS(os, confMDNSModel)
 			}
 		}
 	}
 	if bestDev != "" {
 		out = append(out, emit{observation.SourcePassiveMDNS, observation.SubjectMAC, srcMAC, observation.AttrDeviceClass, bestDev, bestDevConf})
+	}
+	if bestModel != "" {
+		out = append(out, emit{observation.SourcePassiveMDNS, observation.SubjectMAC, srcMAC, observation.AttrModel, bestModel, bestModelConf})
 	}
 	if bestOS != "" {
 		out = append(out, emit{observation.SourcePassiveMDNS, observation.SubjectMAC, srcMAC, observation.AttrOSGuess, bestOS, bestOSConf})

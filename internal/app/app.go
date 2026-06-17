@@ -32,7 +32,7 @@ import (
 // Version (marketing) and Build (YYYY.MM.DD.HH.mm stamp) are set by main from its
 // ldflag-injected values, then surfaced to the UI footer via the API.
 var (
-	Version = "1.0.0"
+	Version = "0.9.0"
 	Build   = "dev"
 )
 

@@ -120,7 +120,7 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	detail.IconID, detail.IconURL = s.effectiveIcon(host.Icon, vendor, host.OSGuess, host.DeviceClass)
+	detail.IconID, detail.IconURL = s.effectiveIcon(host.Icon, vendor, host.OSGuess, host.DeviceClass, host.Model)
 	for _, a := range snap.Addresses {
 		if a.HostID != nil && *a.HostID == host.ID {
 			detail.Addresses = append(detail.Addresses, a)
@@ -279,7 +279,7 @@ func buildHostRows(snap entity.Snapshot) []HostRow {
 // withIcons fills the effective icon id + URL on each row.
 func (s *Server) withIcons(rows []HostRow) []HostRow {
 	for i := range rows {
-		rows[i].IconID, rows[i].IconURL = s.effectiveIcon(rows[i].Icon, rows[i].Vendor, rows[i].OSGuess, rows[i].DeviceClass)
+		rows[i].IconID, rows[i].IconURL = s.effectiveIcon(rows[i].Icon, rows[i].Vendor, rows[i].OSGuess, rows[i].DeviceClass, rows[i].Model)
 	}
 	return rows
 }

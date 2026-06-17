@@ -28,10 +28,10 @@ type IconInfo struct {
 // effectiveIcon returns the icon id + URL for a host: the operator's manual
 // choice if set, otherwise the auto-assignment, resolved to a custom or bundled
 // asset URL.
-func (s *Server) effectiveIcon(iconID, vendor, os, deviceClass string) (string, string) {
+func (s *Server) effectiveIcon(iconID, vendor, os, deviceClass, model string) (string, string) {
 	id := iconID
 	if id == "" {
-		id = icons.Auto(vendor, os, deviceClass)
+		id = icons.Auto(vendor, os, deviceClass, model)
 	}
 	return id, s.iconURL(id)
 }

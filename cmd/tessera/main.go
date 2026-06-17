@@ -22,9 +22,10 @@ import (
 )
 
 // version (marketing) and buildNumber (YYYY.MM.DD.HH.mm build stamp) are set at
-// build time via -ldflags "-X main.version=... -X main.buildNumber=...".
+// build time via -ldflags. version is PINNED (pre-release 0.9.0) and bumped by
+// hand at real releases — NOT per commit; buildNumber increments every build.
 var (
-	version     = "1.0.0"
+	version     = "0.9.0"
 	buildNumber = "dev"
 )
 

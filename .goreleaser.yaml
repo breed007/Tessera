@@ -8,8 +8,12 @@ project_name: tessera
 # apt/dpkg refuse the upgrade. {{.Timestamp}} (Unix epoch) always increases, and
 # dpkg compares the trailing digit run numerically. Tagged releases are unaffected
 # — they use the tag as the version and already increase monotonically.
+# Pre-release: the marketing version is pinned (0.9.0); only the build number
+# (a timestamp) increments per build. The package version carries the timestamp
+# (tilde-prefixed so it sorts before a future 0.9.0 final) so apt still sees each
+# new local build as an upgrade.
 snapshot:
-  version_template: "{{ incpatch .Version }}-snapshot.{{ .Timestamp }}"
+  version_template: "0.9.0~snapshot.{{ .Timestamp }}"
 
 before:
   hooks:
@@ -27,7 +31,10 @@ builds:
       - amd64
       - arm64
     ldflags:
-      - -s -w -X main.version={{ .Version }} -X main.buildNumber={{ time "2006.01.02.15.04" }}
+      # Pinned marketing version + per-build timestamp. main.version is hardcoded
+      # (not {{.Version}}) so the footer shows a clean "0.9.0" while the package
+      # version (above) carries the incrementing timestamp.
+      - -s -w -X main.version=0.9.0 -X main.buildNumber={{ time "2006.01.02.15.04" }}
 
 archives:
   - id: tessera

@@ -1,0 +1,103 @@
+package api
+
+import (
+	"encoding/json"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/tessera/tessera/internal/entity"
+	"github.com/tessera/tessera/internal/observation"
+)
+
+// resolveConflictRequest records which value an operator keeps as source of truth
+// for a (subject, attribute) conflict, with an optional note.
+type resolveConflictRequest struct {
+	Subject   string `json:"subject"`
+	Attribute string `json:"attribute"`
+	Value     string `json:"value"`  // the chosen source-of-truth value
+	Source    string `json:"source"` // which side it came from (for display)
+	Note      string `json:"note"`
+}
+
+// handleResolveConflict writes the chosen value as an authoritative manual
+// annotation (so it wins reconciliation) and records the resolution, then
+// reconciles. Admin-only.
+func (s *Server) handleResolveConflict(w http.ResponseWriter, r *http.Request) {
+	who, ok := s.requireAdmin(w, r)
+	if !ok {
+		return
+	}
+	var req resolveConflictRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad JSON")
+		return
+	}
+	req.Subject, req.Attribute = strings.TrimSpace(req.Subject), strings.TrimSpace(req.Attribute)
+	if req.Subject == "" || req.Attribute == "" {
+		writeErr(w, http.StatusBadRequest, "subject and attribute are required")
+		return
+	}
+	if !observation.IsValidAttribute(observation.Attribute(req.Attribute)) {
+		writeErr(w, http.StatusBadRequest, "unknown attribute")
+		return
+	}
+	subjectType, subject, err := subjectFromStableID(req.Subject)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	ctx := r.Context()
+
+	// Make the chosen value the source of truth: a manual annotation outranks any
+	// discovered value (§3.2). Skip if no value was supplied (acknowledge-only).
+	if req.Value != "" {
+		if _, err := s.sink.Record(ctx, observation.SourceManual, subjectType, subject,
+			observation.Attribute(req.Attribute), req.Value, manualConfidence); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if err := s.store.SetResolution(ctx, entity.ConflictResolution{
+		Subject:      req.Subject,
+		Attribute:    req.Attribute,
+		ChosenValue:  req.Value,
+		ChosenSource: req.Source,
+		Note:         strings.TrimSpace(req.Note),
+		ResolvedAt:   time.Now().UTC(),
+		ResolvedBy:   who.username,
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if s.reconcile != nil {
+		if err := s.reconcile(ctx); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// reopenConflictRequest re-opens a resolved conflict (clears the resolution flag;
+// any manual value already written stays until re-annotated).
+type reopenConflictRequest struct {
+	Subject   string `json:"subject"`
+	Attribute string `json:"attribute"`
+}
+
+func (s *Server) handleReopenConflict(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireAdmin(w, r); !ok {
+		return
+	}
+	var req reopenConflictRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad JSON")
+		return
+	}
+	if err := s.store.DeleteResolution(r.Context(), strings.TrimSpace(req.Subject), strings.TrimSpace(req.Attribute)); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}

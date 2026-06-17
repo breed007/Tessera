@@ -98,6 +98,9 @@ var validAttributes = map[Attribute]bool{
 	AttrIsExpected: true, AttrNotes: true, AttrReservation: true, AttrDisplayName: true, AttrIcon: true,
 }
 
+// IsValidAttribute reports whether attr is a known observation attribute.
+func IsValidAttribute(attr Attribute) bool { return validAttributes[attr] }
+
 // Observation is one raw, immutable assertion in the append-only log. Every
 // collector — passive, active, UniFi, Fingerbank, manual — produces exactly
 // this shape. ID is assigned by the store on Append.

@@ -539,6 +539,44 @@ func (s *Store) loadConflicts(ctx context.Context) ([]entity.Conflict, error) {
 	return out, rows.Err()
 }
 
+// ── conflict resolutions (operator workflow state) ───────────────────────────
+
+func (s *Store) ListResolutions(ctx context.Context) ([]entity.ConflictResolution, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT subject, attribute, chosen_value, chosen_source, note, resolved_at, resolved_by
+		FROM conflict_resolutions ORDER BY resolved_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []entity.ConflictResolution
+	for rows.Next() {
+		var r entity.ConflictResolution
+		var at string
+		if err := rows.Scan(&r.Subject, &r.Attribute, &r.ChosenValue, &r.ChosenSource, &r.Note, &at, &r.ResolvedBy); err != nil {
+			return nil, err
+		}
+		r.ResolvedAt, _ = parseTime(at)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) SetResolution(ctx context.Context, r entity.ConflictResolution) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO conflict_resolutions
+		(subject, attribute, chosen_value, chosen_source, note, resolved_at, resolved_by)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(subject, attribute) DO UPDATE SET
+			chosen_value=excluded.chosen_value, chosen_source=excluded.chosen_source,
+			note=excluded.note, resolved_at=excluded.resolved_at, resolved_by=excluded.resolved_by`,
+		r.Subject, r.Attribute, r.ChosenValue, r.ChosenSource, r.Note, ft(r.ResolvedAt), r.ResolvedBy)
+	return err
+}
+
+func (s *Store) DeleteResolution(ctx context.Context, subject, attribute string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM conflict_resolutions WHERE subject=? AND attribute=?`, subject, attribute)
+	return err
+}
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 func ft(t time.Time) string { return t.UTC().Format(rfc3339ms) }

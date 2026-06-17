@@ -47,10 +47,20 @@ type EntityStore interface {
 	LoadEntities(ctx context.Context) (entity.Snapshot, error)
 }
 
+// ConflictStore persists operator decisions on conflicts (which value is the
+// source of truth). It is workflow state, kept separately from the derived
+// conflict list and merged in at read time, keyed by (subject, attribute).
+type ConflictStore interface {
+	ListResolutions(ctx context.Context) ([]entity.ConflictResolution, error)
+	SetResolution(ctx context.Context, r entity.ConflictResolution) error
+	DeleteResolution(ctx context.Context, subject, attribute string) error
+}
+
 // Store is the full persistence surface handed to the app at startup.
 type Store interface {
 	ObservationLog
 	EntityStore
+	ConflictStore
 	Migrate(ctx context.Context) error
 	Close() error
 }

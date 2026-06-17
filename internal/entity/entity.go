@@ -109,6 +109,21 @@ type Conflict struct {
 	Resolved  bool      `json:"resolved"`
 }
 
+// ConflictResolution is an operator's decision on a conflict: which value is the
+// source of truth for a (subject, attribute), plus an optional note. It is
+// workflow state (not a network observation) and persists independently of the
+// derived conflict list — the chosen value is ALSO written as a manual
+// annotation so it actually wins reconciliation.
+type ConflictResolution struct {
+	Subject      string    `json:"subject"`
+	Attribute    string    `json:"attribute"`
+	ChosenValue  string    `json:"chosen_value"`
+	ChosenSource string    `json:"chosen_source"`
+	Note         string    `json:"note,omitempty"`
+	ResolvedAt   time.Time `json:"resolved_at"`
+	ResolvedBy   string    `json:"resolved_by,omitempty"`
+}
+
 // Snapshot is the full reconciled entity layer at a point in time. The
 // reconciler rebuilds it from the log and the store persists it atomically
 // (Reset + insert), which is exactly the §3.3 "reconstructable by replaying the

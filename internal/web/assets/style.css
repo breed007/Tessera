@@ -98,6 +98,16 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 .conflict .vs { color: var(--faint); }
 .conflict b { color: var(--accent); }
 .src { color: var(--accent-dim); }
+.cf-card { background: var(--surface-raised); border: 1px solid var(--hairline); border-radius: 6px; padding: 10px 12px; margin: 8px 0; font-size: 12px; }
+.cf-card.resolved { opacity: 0.85; }
+.cf-head { display: flex; align-items: center; gap: 8px; justify-content: space-between; margin-bottom: 8px; }
+.cf-sides { display: flex; align-items: center; gap: 10px; }
+.cf-side { flex: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px; background: var(--bg); border: 1px solid var(--hairline); border-radius: 5px; padding: 7px 9px; }
+.cf-side b { color: var(--accent); }
+.cf-sides .vs { color: var(--faint); flex: 0 0 auto; }
+.cf-note { width: 100%; margin-top: 8px; padding: 6px 8px; background: var(--bg); border: 1px solid var(--hairline); border-radius: 3px; color: var(--text); font-family: var(--mono); font-size: 12px; }
+.cf-note:focus { outline: none; border-color: var(--accent); }
+.cf-note-text { color: var(--text-secondary, var(--text)); margin-top: 4px; }
 
 .overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); z-index: 5; }
 .detail {

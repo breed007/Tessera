@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"sort"
 	"strconv"
@@ -67,11 +68,7 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 		Services:     len(snap.Services),
 		Observations: int(obs),
 	}
-	for _, c := range snap.Conflicts {
-		if !c.Resolved {
-			sum.OpenConflicts++
-		}
-	}
+	sum.OpenConflicts = s.openConflictCount(r.Context(), snap)
 	for _, h := range snap.Hosts {
 		if !h.IsExpected {
 			sum.NewDevices++
@@ -183,19 +180,57 @@ func (s *Server) handleSubnets(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, snap.Subnets)
 }
 
+// handleConflicts returns the conflict workflow: live disagreements still open,
+// and the operator's recorded resolutions (which value is source of truth).
 func (s *Server) handleConflicts(w http.ResponseWriter, r *http.Request) {
-	snap, err := s.store.LoadEntities(r.Context())
+	ctx := r.Context()
+	snap, err := s.store.LoadEntities(ctx)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	resolved, err := s.store.ListResolutions(ctx)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resolvedKeys := map[string]bool{}
+	for _, rr := range resolved {
+		resolvedKeys[conflictKey(rr.Subject, rr.Attribute)] = true
+	}
 	open := make([]entity.Conflict, 0)
 	for _, c := range snap.Conflicts {
-		if !c.Resolved {
+		if !c.Resolved && !resolvedKeys[conflictKey(c.Subject, c.Attribute)] {
 			open = append(open, c)
 		}
 	}
-	writeJSON(w, http.StatusOK, open)
+	if resolved == nil {
+		resolved = []entity.ConflictResolution{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"open": open, "resolved": resolved})
+}
+
+// conflictKey is the stable identity of a conflict / resolution across rebuilds
+// (the numeric conflict id is reassigned each reconcile).
+func conflictKey(subject, attribute string) string { return subject + "\x1f" + attribute }
+
+// openConflictCount returns the number of live conflicts without a resolution.
+func (s *Server) openConflictCount(ctx context.Context, snap entity.Snapshot) int {
+	resolved, err := s.store.ListResolutions(ctx)
+	if err != nil {
+		resolved = nil
+	}
+	resolvedKeys := map[string]bool{}
+	for _, rr := range resolved {
+		resolvedKeys[conflictKey(rr.Subject, rr.Attribute)] = true
+	}
+	n := 0
+	for _, c := range snap.Conflicts {
+		if !c.Resolved && !resolvedKeys[conflictKey(c.Subject, c.Attribute)] {
+			n++
+		}
+	}
+	return n
 }
 
 // handleNewDevices surfaces hosts not yet marked expected — the "new / unexpected

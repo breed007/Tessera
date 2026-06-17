@@ -155,6 +155,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/address/reserve", s.handleReserve)
 	mux.HandleFunc("POST /api/host/rescan", s.handleRescanHost)
 	mux.HandleFunc("POST /api/subnet/rescan", s.handleRescanSubnet)
+	mux.HandleFunc("POST /api/conflict/resolve", s.handleResolveConflict)
+	mux.HandleFunc("POST /api/conflict/reopen", s.handleReopenConflict)
 
 	// Settings + users + tests + restart (admin).
 	mux.HandleFunc("GET /api/settings", s.handleGetSettings)

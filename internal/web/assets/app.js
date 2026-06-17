@@ -69,10 +69,10 @@ function renderUserbar() {
 // ── inventory (unchanged behavior, admin-gated annotation) ───────────────────
 
 async function refresh() {
-  const [summary, hosts, news, conflicts] = await Promise.all([
-    getJSON("/api/summary"), getJSON("/api/hosts"), getJSON("/api/new"), getJSON("/api/conflicts"),
+  const [summary, hosts, news] = await Promise.all([
+    getJSON("/api/summary"), getJSON("/api/hosts"), getJSON("/api/new"),
   ]);
-  renderSummary(summary); renderHosts(hosts); renderNew(news); renderConflicts(conflicts);
+  renderSummary(summary); renderHosts(hosts); renderNew(news);
 }
 function renderSummary(s) {
   const stat = (n, l, d) => `<div class="stat" data-drill="${d}"><b>${n}</b><span>${l}</span></div>`;
@@ -91,10 +91,7 @@ async function openDrill(kind) {
     } else if (kind === "subnets") {
       renderSubnets(await getJSON("/api/subnets"));
     } else if (kind === "conflicts") {
-      const rows = await getJSON("/api/conflicts");
-      if (!rows.length) { toast("No open conflicts"); return; }
-      renderDrill("Conflicts", ["Subject", "Attribute", "Current", "Conflicting"],
-        rows.map((c) => [c.subject, c.attribute, `${c.value_a} (${c.source_a})`, `${c.value_b} (${c.source_b})`]));
+      await openConflicts();
     } else {
       document.getElementById("hosts").scrollIntoView({ behavior: "smooth", block: "start" });
     }
@@ -229,14 +226,69 @@ function renderNew(news) {
     </div>`).join("");
   for (const c of $("new-list").querySelectorAll(".card")) c.onclick = () => openHost(c.dataset.id);
 }
-function renderConflicts(conflicts) {
-  const sec = $("conflict-section");
-  if (!conflicts.length) { sec.classList.add("hidden"); return; }
-  sec.classList.remove("hidden"); $("conflict-count").textContent = conflicts.length;
-  $("conflict-list").innerHTML = conflicts.map((c) => `
-    <div class="conflict"><span class="mono">${esc(c.subject)}</span> · <b>${esc(c.attribute)}</b>:
-      current <b>${esc(c.value_a)}</b> <span class="src">(${esc(c.source_a)})</span>
-      <span class="vs">vs</span> ${esc(c.value_b)} <span class="src">(${esc(c.source_b)})</span></div>`).join("");
+// openConflicts is the dedicated conflict workflow: open disagreements (with a
+// "keep this one" decision + note) and the log of resolved ones (with reopen).
+async function openConflicts() {
+  const data = await getJSON("/api/conflicts");
+  const open = data.open || [], resolved = data.resolved || [];
+  const admin = me.is_admin;
+
+  const side = (c, which) => {
+    const val = which === "a" ? c.value_a : c.value_b;
+    const src = which === "a" ? c.source_a : c.source_b;
+    const btn = admin
+      ? `<button class="ghost keep" data-subject="${esc(c.subject)}" data-attr="${esc(c.attribute)}" data-value="${esc(val)}" data-source="${esc(src)}">Keep this</button>`
+      : "";
+    return `<div class="cf-side"><div><b>${esc(val)}</b> <span class="src">(${esc(src)})</span></div>${btn}</div>`;
+  };
+
+  const openHTML = open.length ? open.map((c) => `
+    <div class="cf-card" data-subject="${esc(c.subject)}" data-attr="${esc(c.attribute)}">
+      <div class="cf-head"><span class="mono">${esc(c.subject)}</span> · <b>${esc(c.attribute)}</b></div>
+      <div class="cf-sides">${side(c, "a")}<span class="vs">vs</span>${side(c, "b")}</div>
+      ${admin ? `<input type="text" class="cf-note" placeholder="note (optional) — why this is the source of truth">` : ""}
+    </div>`).join("") : `<p class="muted-note">No open conflicts. 🎉</p>`;
+
+  const resolvedHTML = resolved.length ? resolved.map((rr) => `
+    <div class="cf-card resolved">
+      <div class="cf-head"><span class="mono">${esc(rr.subject)}</span> · <b>${esc(rr.attribute)}</b>
+        ${admin ? `<button class="ghost reopen" data-subject="${esc(rr.subject)}" data-attr="${esc(rr.attribute)}">Reopen</button>` : ""}</div>
+      <div>source of truth: <b>${esc(rr.chosen_value || "—")}</b> ${rr.chosen_source ? `<span class="src">(${esc(rr.chosen_source)})</span>` : ""}</div>
+      ${rr.note ? `<div class="cf-note-text">“${esc(rr.note)}”</div>` : ""}
+      <div class="muted-note">resolved ${fmtTime(rr.resolved_at)}${rr.resolved_by ? " by " + esc(rr.resolved_by) : ""}</div>
+    </div>`).join("") : `<p class="muted-note">Nothing resolved yet.</p>`;
+
+  $("detail-body").innerHTML = `
+    <h2>Conflicts</h2>
+    <p class="muted-note">Sources disagree on a high-value attribute. Keep one value as the source of truth — it's written as an authoritative manual annotation, and the conflict moves to Resolved (the disagreement is recorded, not hidden).</p>
+    <h3>Open <span class="badge">${open.length}</span></h3>
+    ${openHTML}
+    <h3>Resolved <span class="badge">${resolved.length}</span></h3>
+    ${resolvedHTML}`;
+
+  if (admin) {
+    for (const b of $("detail-body").querySelectorAll(".keep")) {
+      b.onclick = async () => {
+        const note = b.closest(".cf-card").querySelector(".cf-note");
+        b.disabled = true;
+        try {
+          await post("/api/conflict/resolve", {
+            subject: b.dataset.subject, attribute: b.dataset.attr,
+            value: b.dataset.value, source: b.dataset.source, note: note ? note.value : "",
+          });
+          toast("Resolved"); openConflicts(); refresh();
+        } catch (e) { toast(e.message); b.disabled = false; }
+      };
+    }
+    for (const b of $("detail-body").querySelectorAll(".reopen")) {
+      b.onclick = async () => {
+        b.disabled = true;
+        try { await post("/api/conflict/reopen", { subject: b.dataset.subject, attribute: b.dataset.attr }); toast("Reopened"); openConflicts(); refresh(); }
+        catch (e) { toast(e.message); b.disabled = false; }
+      };
+    }
+  }
+  openPanel("detail");
 }
 
 async function openHost(id) {

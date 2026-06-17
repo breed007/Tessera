@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/tessera/tessera/internal/account"
+	"github.com/tessera/tessera/internal/alert"
 	"github.com/tessera/tessera/internal/collector/active"
 	"github.com/tessera/tessera/internal/collector/fingerbank"
 	"github.com/tessera/tessera/internal/collector/unifi"
@@ -205,6 +206,41 @@ func (s *Server) handleRestart(w http.ResponseWriter, r *http.Request) {
 		go func() { time.Sleep(300 * time.Millisecond); s.onRestart() }()
 	}
 }
+
+// handleTestAlert sends a one-off test notification to the given destination
+// (or the saved one if no URL is supplied), so the operator can verify alerts
+// before relying on them.
+func (s *Server) handleTestAlert(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireAdmin(w, r); !ok {
+		return
+	}
+	var req struct {
+		Kind string `json:"kind"`
+		URL  string `json:"url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad JSON")
+		return
+	}
+	url := req.URL
+	if url == "" {
+		url = s.cfg.Secrets.AlertWebhookURL // fall back to the saved secret
+	}
+	if url == "" {
+		testResult(w, "", errNoAlertURL)
+		return
+	}
+	ctx, cancel := contextWithTimeout(r, 10*time.Second)
+	defer cancel()
+	ev := alert.Event{Type: "test", Title: "Test", Message: "✅ Tessera test alert — notifications are working.", At: time.Now()}
+	testResult(w, "sent", alert.Notify(ctx, nil, req.Kind, url, ev))
+}
+
+var errNoAlertURL = errorString("no webhook URL set — enter one and save, or type one to test")
+
+type errorString string
+
+func (e errorString) Error() string { return string(e) }
 
 func testResult(w http.ResponseWriter, ok string, err error) {
 	if err != nil {

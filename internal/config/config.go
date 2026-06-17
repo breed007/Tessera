@@ -18,6 +18,7 @@ type Config struct {
 	Reconcile   Reconcile   `yaml:"reconcile"`
 	Storage     Storage     `yaml:"storage"`
 	API         API         `yaml:"api"`
+	Alerts      Alerts      `yaml:"alerts"`
 
 	// Secrets is populated from the environment, never from the YAML file.
 	Secrets Secrets `yaml:"-"`
@@ -181,6 +182,20 @@ type Secrets struct {
 	APIToken        string // optional bearer token for the HTTP API (§M8)
 	APIPasswordHash string // bcrypt hash of the bootstrap admin password (§M9)
 	SecretKey       string // master key for encrypting settings secrets at rest (§M10)
+	AlertWebhookURL string // destination URL for alert notifications (may carry a token)
+}
+
+// Alerts configures proactive notifications dispatched on reconciliation deltas.
+// The destination URL is a secret (Secrets.AlertWebhookURL); everything else is
+// plain config.
+type Alerts struct {
+	Enabled   bool   `yaml:"enabled"`
+	Kind      string `yaml:"kind"` // webhook | slack | discord | ntfy
+	NewDevice bool   `yaml:"new_device"`
+	Offline   bool   `yaml:"offline"`
+	Online    bool   `yaml:"online"`
+	IPChanged bool   `yaml:"ip_changed"`
+	Conflict  bool   `yaml:"conflict"`
 }
 
 // Default returns a Config populated with the §5 defaults, before file/env

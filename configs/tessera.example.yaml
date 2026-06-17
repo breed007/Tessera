@@ -6,7 +6,17 @@
 #   TESSERA_UNIFI_API_KEY
 #   TESSERA_FINGERBANK_KEY
 #   TESSERA_SNMP_COMMUNITY
+#   TESSERA_ALERT_WEBHOOK_URL   (alert destination; may carry a token)
 # They are read into memory at startup, never written back, never logged.
+#
+# alerts: proactive notifications on reconciliation deltas (configure in the UI).
+#   enabled: false
+#   kind: webhook            # webhook | slack | discord | ntfy
+#   new_device: true
+#   offline: true
+#   online: false
+#   ip_changed: false
+#   conflict: true
 
 sensor:
   # Master switch for ALL passive traffic inspection (packet capture). OFF by

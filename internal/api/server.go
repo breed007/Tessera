@@ -176,6 +176,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/test/unifi", s.handleTestUniFi)
 	mux.HandleFunc("POST /api/test/snmp", s.handleTestSNMP)
 	mux.HandleFunc("POST /api/test/fingerbank", s.handleTestFingerbank)
+	mux.HandleFunc("POST /api/test/alert", s.handleTestAlert)
 	mux.HandleFunc("POST /api/restart", s.handleRestart)
 
 	// Device icons (§M12). Custom icon assets are public like the bundled ones.

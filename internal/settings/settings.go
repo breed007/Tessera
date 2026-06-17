@@ -27,6 +27,7 @@ const (
 	secUniFiKey   = "secret.unifi_api_key"
 	secSNMP       = "secret.snmp_community"
 	secFingerbank = "secret.fingerbank_key"
+	secAlertURL   = "secret.alert_webhook_url"
 )
 
 // Editable is the UI-editable surface of the configuration (non-secret).
@@ -52,6 +53,15 @@ type Editable struct {
 	SNMPCommunities      []string `json:"snmp_communities"` // visible, multi-valued (low-sensitivity, operator-managed)
 
 	SensorEnabled bool `json:"sensor_enabled"`
+
+	// Alerts (the webhook URL itself is a secret; see SecretsInput.AlertURL).
+	AlertsEnabled   bool   `json:"alerts_enabled"`
+	AlertsKind      string `json:"alerts_kind"`
+	AlertNewDevice  bool   `json:"alert_new_device"`
+	AlertOffline    bool   `json:"alert_offline"`
+	AlertOnline     bool   `json:"alert_online"`
+	AlertIPChanged  bool   `json:"alert_ip_changed"`
+	AlertConflict   bool   `json:"alert_conflict"`
 
 	// Discovery techniques (per-protocol toggles; all default on). Passive_*
 	// apply when the sensor is enabled; the rest when the active prober is.
@@ -79,6 +89,7 @@ type SecretsInput struct {
 	UniFiAPIKey   *string `json:"unifi_api_key,omitempty"`
 	SNMPCommunity *string `json:"snmp_community,omitempty"`
 	FingerbankKey *string `json:"fingerbank_key,omitempty"`
+	AlertURL      *string `json:"alert_url,omitempty"`
 }
 
 // SecretFlags reports which secrets are currently set (without revealing them).
@@ -88,6 +99,7 @@ type SecretFlags struct {
 	UniFiAPIKey   bool `json:"unifi_api_key_set"`
 	SNMPCommunity bool `json:"snmp_community_set"`
 	FingerbankKey bool `json:"fingerbank_key_set"`
+	AlertURL      bool `json:"alert_url_set"`
 }
 
 // Service reads/writes the editable settings, applying encryption for secrets.
@@ -118,7 +130,7 @@ func (s *Service) Effective(ctx context.Context, base config.Config) (config.Con
 	for key, dst := range map[string]*string{
 		secUniFiUser: &base.Secrets.UniFiUsername, secUniFiPass: &base.Secrets.UniFiPassword,
 		secUniFiKey: &base.Secrets.UniFiAPIKey, secSNMP: &base.Secrets.SNMPCommunity,
-		secFingerbank: &base.Secrets.FingerbankKey,
+		secFingerbank: &base.Secrets.FingerbankKey, secAlertURL: &base.Secrets.AlertWebhookURL,
 	} {
 		if v, ok, _ := s.store.SettingGet(ctx, key); ok && v != "" {
 			if plain, err := s.cipher.Open(v); err == nil && plain != "" {
@@ -151,7 +163,7 @@ func (s *Service) SaveEditable(ctx context.Context, e Editable) error {
 func (s *Service) SaveSecrets(ctx context.Context, in SecretsInput) error {
 	for key, val := range map[string]*string{
 		secUniFiUser: in.UniFiUsername, secUniFiPass: in.UniFiPassword, secUniFiKey: in.UniFiAPIKey,
-		secSNMP: in.SNMPCommunity, secFingerbank: in.FingerbankKey,
+		secSNMP: in.SNMPCommunity, secFingerbank: in.FingerbankKey, secAlertURL: in.AlertURL,
 	} {
 		if val == nil {
 			continue
@@ -171,7 +183,7 @@ func (s *Service) secretFlags(ctx context.Context) SecretFlags {
 	isSet := func(k string) bool { v, ok, _ := s.store.SettingGet(ctx, k); return ok && v != "" }
 	return SecretFlags{
 		UniFiUsername: isSet(secUniFiUser), UniFiPassword: isSet(secUniFiPass), UniFiAPIKey: isSet(secUniFiKey),
-		SNMPCommunity: isSet(secSNMP), FingerbankKey: isSet(secFingerbank),
+		SNMPCommunity: isSet(secSNMP), FingerbankKey: isSet(secFingerbank), AlertURL: isSet(secAlertURL),
 	}
 }
 
@@ -197,6 +209,11 @@ func applyEditable(c *config.Config, e Editable) {
 	c.ActiveProbe.Interface = e.ActiveProbeInterface
 	c.ActiveProbe.SNMPCommunities = e.SNMPCommunities
 	c.Sensor.Enabled = e.SensorEnabled
+	c.Alerts = config.Alerts{
+		Enabled: e.AlertsEnabled, Kind: e.AlertsKind,
+		NewDevice: e.AlertNewDevice, Offline: e.AlertOffline, Online: e.AlertOnline,
+		IPChanged: e.AlertIPChanged, Conflict: e.AlertConflict,
+	}
 
 	b := func(v bool) *bool { return &v }
 	c.Discovery = config.Discovery{
@@ -227,6 +244,13 @@ func extractEditable(c config.Config) Editable {
 		ActiveProbeICMP:      c.ActiveProbe.ICMP,
 		ActiveProbeInterface: c.ActiveProbe.Interface,
 		SNMPCommunities:      c.ActiveProbe.SNMPCommunities,
+		AlertsEnabled:        c.Alerts.Enabled,
+		AlertsKind:           c.Alerts.Kind,
+		AlertNewDevice:       c.Alerts.NewDevice,
+		AlertOffline:         c.Alerts.Offline,
+		AlertOnline:          c.Alerts.Online,
+		AlertIPChanged:       c.Alerts.IPChanged,
+		AlertConflict:        c.Alerts.Conflict,
 		SensorEnabled:        c.Sensor.Enabled,
 
 		DiscPassiveARP:       d.PassiveARP,

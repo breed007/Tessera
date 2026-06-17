@@ -1,0 +1,292 @@
+// Package alert turns reconciliation deltas into notifications. After each
+// rebuild it diffs the entity snapshot against the previously-seen state and, for
+// the events the operator enabled, dispatches a message to a webhook (generic
+// JSON, Slack, Discord, or ntfy). The very first run seeds a silent baseline so
+// existing devices don't all fire at once.
+package alert
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/tessera/tessera/internal/entity"
+)
+
+// Event types.
+const (
+	TypeNewDevice = "new_device"
+	TypeOffline   = "device_offline"
+	TypeOnline    = "device_online"
+	TypeIPChanged = "ip_changed"
+	TypeConflict  = "conflict"
+)
+
+const stateKey = "alert.state"
+
+// Event is one notification-worthy change.
+type Event struct {
+	Type    string    `json:"type"`
+	Title   string    `json:"title"`
+	Message string    `json:"message"`
+	Subject string    `json:"subject"`
+	At      time.Time `json:"at"`
+}
+
+// Config is the alerting configuration (assembled from settings + the secret URL).
+type Config struct {
+	Enabled   bool
+	Kind      string // webhook | slack | discord | ntfy
+	URL       string // destination (webhook/ntfy topic URL); secret-sourced
+	NewDevice bool
+	Offline   bool
+	Online    bool
+	IPChanged bool
+	Conflict  bool
+}
+
+func (c Config) wants(t string) bool {
+	switch t {
+	case TypeNewDevice:
+		return c.NewDevice
+	case TypeOffline:
+		return c.Offline
+	case TypeOnline:
+		return c.Online
+	case TypeIPChanged:
+		return c.IPChanged
+	case TypeConflict:
+		return c.Conflict
+	}
+	return false
+}
+
+// Store is the narrow persistence the engine needs.
+type Store interface {
+	LoadEntities(ctx context.Context) (entity.Snapshot, error)
+	SettingGet(ctx context.Context, key string) (string, bool, error)
+	SettingSet(ctx context.Context, key, value string, isSecret bool) error
+}
+
+// Engine diffs snapshots and dispatches alerts.
+type Engine struct {
+	store Store
+	cfg   Config
+	log   *slog.Logger
+	httpc *http.Client
+}
+
+func New(store Store, cfg Config, log *slog.Logger) *Engine {
+	if log == nil {
+		log = slog.Default()
+	}
+	return &Engine{store: store, cfg: cfg, log: log, httpc: &http.Client{Timeout: 10 * time.Second}}
+}
+
+type hostState struct {
+	Online bool   `json:"online"`
+	IP     string `json:"ip"`
+}
+
+type state struct {
+	Hosts     map[string]hostState `json:"hosts"`
+	Conflicts map[string]bool      `json:"conflicts"`
+}
+
+// Process diffs the current entity layer against the last-seen state and
+// dispatches enabled events. No-op when alerting is disabled or unconfigured.
+func (e *Engine) Process(ctx context.Context) error {
+	if !e.cfg.Enabled || strings.TrimSpace(e.cfg.URL) == "" {
+		return nil
+	}
+	snap, err := e.store.LoadEntities(ctx)
+	if err != nil {
+		return err
+	}
+	prev, firstRun, err := e.loadState(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Index addresses by host so we can compute online + primary IP.
+	type acc struct {
+		online bool
+		ip     string
+	}
+	byHost := map[int64]*acc{}
+	for _, a := range snap.Addresses {
+		if a.HostID == nil {
+			continue
+		}
+		h := byHost[*a.HostID]
+		if h == nil {
+			h = &acc{}
+			byHost[*a.HostID] = h
+		}
+		active := a.State == entity.StateActive
+		if active && (h.ip == "" || !h.online) {
+			h.ip = a.IP // prefer an active address as the primary
+		} else if h.ip == "" {
+			h.ip = a.IP
+		}
+		if active {
+			h.online = true
+		}
+	}
+
+	cur := state{Hosts: map[string]hostState{}, Conflicts: map[string]bool{}}
+	var events []Event
+	for _, host := range snap.Hosts {
+		a := byHost[host.ID]
+		hs := hostState{}
+		if a != nil {
+			hs = hostState{Online: a.online, IP: a.ip}
+		}
+		cur.Hosts[host.StableID] = hs
+		if firstRun {
+			continue
+		}
+		old, known := prev.Hosts[host.StableID]
+		name := host.DisplayName
+		if name == "" {
+			name = host.StableID
+		}
+		switch {
+		case !known:
+			if !host.IsExpected && !host.Ignored {
+				events = append(events, Event{TypeNewDevice, "New device", fmt.Sprintf("🆕 New device: %s%s%s", name, ipSuffix(hs.IP), descSuffix(host)), host.StableID, host.FirstSeen})
+			}
+		default:
+			if old.Online && !hs.Online {
+				events = append(events, Event{TypeOffline, "Device offline", fmt.Sprintf("🔴 Offline: %s%s", name, ipSuffix(old.IP)), host.StableID, time.Now()})
+			} else if !old.Online && hs.Online {
+				events = append(events, Event{TypeOnline, "Device online", fmt.Sprintf("🟢 Back online: %s%s", name, ipSuffix(hs.IP)), host.StableID, time.Now()})
+			}
+			if old.IP != "" && hs.IP != "" && old.IP != hs.IP {
+				events = append(events, Event{TypeIPChanged, "IP changed", fmt.Sprintf("🔀 %s: IP changed %s → %s", name, old.IP, hs.IP), host.StableID, time.Now()})
+			}
+		}
+	}
+
+	for _, c := range snap.Conflicts {
+		key := c.Subject + "\x1f" + c.Attribute
+		cur.Conflicts[key] = true
+		if !firstRun && !prev.Conflicts[key] {
+			events = append(events, Event{TypeConflict, "Conflict", fmt.Sprintf("⚠️ Conflict on %s · %s: %q vs %q", c.Subject, c.Attribute, c.ValueA, c.ValueB), c.Subject, time.Now()})
+		}
+	}
+
+	if !firstRun {
+		// Deterministic order so a burst reads sensibly.
+		sort.SliceStable(events, func(i, j int) bool { return events[i].Type < events[j].Type })
+		for _, ev := range events {
+			if !e.cfg.wants(ev.Type) {
+				continue
+			}
+			if err := Notify(ctx, e.httpc, e.cfg.Kind, e.cfg.URL, ev); err != nil {
+				e.log.Warn("alert dispatch failed", "type", ev.Type, "err", err)
+			}
+		}
+		if len(events) > 0 {
+			e.log.Info("alerts dispatched", "count", len(events))
+		}
+	}
+	return e.saveState(ctx, cur)
+}
+
+func (e *Engine) loadState(ctx context.Context) (state, bool, error) {
+	v, ok, err := e.store.SettingGet(ctx, stateKey)
+	if err != nil {
+		return state{}, false, err
+	}
+	if !ok || v == "" {
+		return state{Hosts: map[string]hostState{}, Conflicts: map[string]bool{}}, true, nil
+	}
+	var s state
+	if err := json.Unmarshal([]byte(v), &s); err != nil {
+		// Corrupt state → reseed silently rather than spam.
+		return state{Hosts: map[string]hostState{}, Conflicts: map[string]bool{}}, true, nil
+	}
+	if s.Hosts == nil {
+		s.Hosts = map[string]hostState{}
+	}
+	if s.Conflicts == nil {
+		s.Conflicts = map[string]bool{}
+	}
+	return s, false, nil
+}
+
+func (e *Engine) saveState(ctx context.Context, s state) error {
+	b, err := json.Marshal(s)
+	if err != nil {
+		return err
+	}
+	return e.store.SettingSet(ctx, stateKey, string(b), false)
+}
+
+func ipSuffix(ip string) string {
+	if ip == "" {
+		return ""
+	}
+	return " (" + ip + ")"
+}
+
+func descSuffix(h entity.Host) string {
+	d := h.Model
+	if d == "" {
+		d = h.DeviceClass
+	}
+	if d == "" {
+		return ""
+	}
+	return " — " + d
+}
+
+// Notify formats and sends one event to the destination, shaped per kind.
+func Notify(ctx context.Context, httpc *http.Client, kind, url string, ev Event) error {
+	if httpc == nil {
+		httpc = &http.Client{Timeout: 10 * time.Second}
+	}
+	var (
+		body        []byte
+		contentType = "application/json"
+		headers     = map[string]string{}
+	)
+	switch kind {
+	case "slack":
+		body, _ = json.Marshal(map[string]string{"text": ev.Message})
+	case "discord":
+		body, _ = json.Marshal(map[string]string{"content": ev.Message})
+	case "ntfy":
+		body = []byte(ev.Message)
+		contentType = "text/plain"
+		headers["Title"] = "Tessera — " + ev.Title
+	default: // generic webhook
+		body, _ = json.Marshal(ev)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", contentType)
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	resp, err := httpc.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("alert endpoint returned %d", resp.StatusCode)
+	}
+	return nil
+}

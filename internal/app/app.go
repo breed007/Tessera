@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 
 	"github.com/tessera/tessera/internal/account"
+	"github.com/tessera/tessera/internal/alert"
 	"github.com/tessera/tessera/internal/api"
 	"github.com/tessera/tessera/internal/collector"
 	"github.com/tessera/tessera/internal/collector/active"
@@ -47,6 +48,7 @@ type App struct {
 	obsBuf     *observation.BufferedAppender // backpressure-tolerant collector write path
 	restart    func()                        // triggers a graceful restart (set by main)
 	rescanMu   sync.Mutex                    // serializes on-demand (UI) rescans
+	alerts     *alert.Engine                 // dispatches notifications on reconcile deltas
 }
 
 // New builds the App: opens the store, applies DB settings over the file config,
@@ -130,6 +132,11 @@ func New(ctx context.Context, fileCfg config.Config, log *slog.Logger) (*App, er
 			FreeAfter:          cfg.Reconcile.FreeAfter,
 			ConfidenceHalfLife: cfg.Reconcile.ConfidenceHalfLife,
 		}),
+		alerts: alert.New(st, alert.Config{
+			Enabled: cfg.Alerts.Enabled, Kind: cfg.Alerts.Kind, URL: cfg.Secrets.AlertWebhookURL,
+			NewDevice: cfg.Alerts.NewDevice, Offline: cfg.Alerts.Offline, Online: cfg.Alerts.Online,
+			IPChanged: cfg.Alerts.IPChanged, Conflict: cfg.Alerts.Conflict,
+		}, log),
 	}
 
 	if cfg.API.Enabled {
@@ -393,10 +400,12 @@ func (a *App) Run(ctx context.Context) error {
 		}()
 	}
 
-	// Initial reconcile so entities reflect whatever is already in the log.
+	// Initial reconcile so entities reflect whatever is already in the log. This
+	// also seeds the alert baseline silently (so existing devices don't all fire).
 	if _, err := a.recon.Rebuild(ctx); err != nil {
 		a.log.Error("initial reconcile failed", "err", err)
 	}
+	a.processAlerts(ctx)
 
 	ticker := time.NewTicker(reconcileInterval)
 	defer ticker.Stop()
@@ -411,7 +420,19 @@ func (a *App) Run(ctx context.Context) error {
 			if _, err := a.recon.Rebuild(ctx); err != nil {
 				a.log.Error("reconcile failed", "err", err)
 			}
+			a.processAlerts(ctx)
 		}
+	}
+}
+
+// processAlerts dispatches notifications for the latest reconcile delta. Failures
+// never disrupt the loop.
+func (a *App) processAlerts(ctx context.Context) {
+	if a.alerts == nil {
+		return
+	}
+	if err := a.alerts.Process(ctx); err != nil && ctx.Err() == nil {
+		a.log.Warn("alert processing failed", "err", err)
 	}
 }
 

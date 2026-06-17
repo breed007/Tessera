@@ -187,6 +187,7 @@ function confBadge(conf) {
 // Inventory sort state (client-side; null key = server order until a header is clicked).
 let hostsData = [];
 let hostSort = { key: null, dir: 1 };
+let hostQuery = "";
 
 // sortKeyFns map each sortable column to a comparable value for a host row.
 const sortKeyFns = {
@@ -209,12 +210,21 @@ function ipSortKey(ip) {
   return ip;
 }
 
+// hostMatches tests a host against the free-text inventory search (name, IPs,
+// MACs, vendor, model, device class, OS).
+function hostMatches(h, q) {
+  if (!q) return true;
+  const hay = [h.display_name, h.vendor, h.model, h.device_class, h.os_guess,
+    (h.ips || []).join(" "), (h.macs || []).join(" ")].join(" ").toLowerCase();
+  return q.split(/\s+/).every((term) => hay.includes(term));
+}
+
 function renderHosts(hosts) {
   if (hosts) hostsData = hosts;
-  let rows = hostsData;
+  let rows = hostQuery ? hostsData.filter((h) => hostMatches(h, hostQuery)) : hostsData;
   if (hostSort.key && sortKeyFns[hostSort.key]) {
     const f = sortKeyFns[hostSort.key], d = hostSort.dir;
-    rows = [...hostsData].sort((a, b) => {
+    rows = [...rows].sort((a, b) => {
       const av = f(a), bv = f(b);
       return av < bv ? -d : av > bv ? d : 0;
     });
@@ -246,6 +256,8 @@ function setupSortHeaders() {
       renderHosts();
     };
   }
+  const search = $("host-search");
+  if (search) search.oninput = () => { hostQuery = search.value.trim().toLowerCase(); renderHosts(); };
 }
 // Device review workflow: every host is New (unreviewed), Expected (known), or
 // Ignored (suppressed). Conflicts is a cross-cutting tab that opens the conflict
@@ -509,6 +521,24 @@ async function openSettings() {
       <button class="btn" id="btn-test-fb">Test API key</button><span class="test-result" id="tr-fb"></span>
     </div>
 
+    <div class="settings-section"><h3>Alerts</h3>
+      ${chk("set-al-en", "Enabled — notify on network changes", e.alerts_enabled)}
+      <div class="field"><label>Destination</label><select id="set-al-kind">
+        ${["webhook", "slack", "discord", "ntfy"].map((k) => `<option value="${k}" ${e.alerts_kind === k ? "selected" : ""}>${k}</option>`).join("")}
+      </select></div>
+      ${secField("set-al-url", "Webhook / ntfy URL", flags.alert_url_set)}
+      <p class="muted-note">Slack/Discord: paste the channel's incoming-webhook URL. ntfy: the topic URL (e.g. https://ntfy.sh/my-topic). webhook: any endpoint that accepts a JSON POST.</p>
+      <div class="tech-grid">
+        ${chk("set-al-new", "New device", e.alert_new_device)}
+        ${chk("set-al-off", "Device offline", e.alert_offline)}
+        ${chk("set-al-on", "Device back online", e.alert_online)}
+        ${chk("set-al-ip", "IP changed", e.alert_ip_changed)}
+        ${chk("set-al-cf", "New conflict", e.alert_conflict)}
+      </div>
+      <button class="btn" id="btn-test-alert">Send test alert</button><span class="test-result" id="tr-alert"></span>
+      <p class="muted-note">Changes apply after a restart. The first run after enabling learns the current devices silently (no flood).</p>
+    </div>
+
     <div class="settings-section"><h3>Active prober</h3>
       ${chk("set-ap-en", "Enabled", e.active_probe_enabled)}
       ${txt("set-ap-subnets", "Subnets (comma-separated CIDRs)", (e.active_probe_subnets || []).join(", "))}
@@ -597,6 +627,7 @@ function wireSettings(canSec) {
   });
   $("btn-test-snmp").onclick = () => runTest("/api/test/snmp", "tr-snmp", { ip: val("set-snmp-ip"), community: splitList(val("set-snmp-comms"))[0] || "" });
   $("btn-test-fb").onclick = () => runTest("/api/test/fingerbank", "tr-fb", { key: $("set-fb-key").value });
+  $("btn-test-alert").onclick = () => runTest("/api/test/alert", "tr-alert", { kind: $("set-al-kind").value, url: $("set-al-url").value });
 
   $("btn-add-user").onclick = async () => {
     try { await post("/api/users", { username: val("nu-name"), password: $("nu-pass").value, role: $("nu-role").value }); toast("User added"); openSettings(); }
@@ -648,12 +679,15 @@ function wireSettings(canSec) {
       disc_active_banners: checked("disc-a-ban"), disc_active_reverse_dns: checked("disc-a-rdns"),
       disc_active_arp_table: checked("disc-a-arp"), disc_active_snmp: checked("disc-a-snmp"),
       disc_tcp_behavioral: checked("disc-a-tcpbeh"), disc_thorough_wake: checked("disc-a-wake"),
+      alerts_enabled: checked("set-al-en"), alerts_kind: $("set-al-kind").value,
+      alert_new_device: checked("set-al-new"), alert_offline: checked("set-al-off"),
+      alert_online: checked("set-al-on"), alert_ip_changed: checked("set-al-ip"), alert_conflict: checked("set-al-cf"),
     };
     const secrets = {};
     if (canSec) {
       const add = (k, id) => { const v = secInput(id); if (v !== undefined) secrets[k] = v; };
       add("unifi_username", "set-unifi-user"); add("unifi_password", "set-unifi-pass"); add("unifi_api_key", "set-unifi-key");
-      add("fingerbank_key", "set-fb-key");
+      add("fingerbank_key", "set-fb-key"); add("alert_url", "set-al-url");
     }
     try { await api("PUT", "/api/settings", { editable, secrets }); toast("Saved — restart to apply"); openSettings(); }
     catch (e) { toast(e.message); }

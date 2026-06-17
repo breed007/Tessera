@@ -18,6 +18,7 @@ const (
 	EnvAPIToken        = "TESSERA_API_TOKEN"
 	EnvAPIPasswordHash = "TESSERA_API_PASSWORD_HASH"
 	EnvSecretKey       = "TESSERA_SECRET_KEY"
+	EnvAlertWebhookURL = "TESSERA_ALERT_WEBHOOK_URL"
 )
 
 // Load reads config from path, overlaying onto the defaults, then pulls secrets
@@ -64,6 +65,7 @@ func loadSecrets(cfg *Config) {
 		APIToken:        os.Getenv(EnvAPIToken),
 		APIPasswordHash: os.Getenv(EnvAPIPasswordHash),
 		SecretKey:       os.Getenv(EnvSecretKey),
+		AlertWebhookURL: os.Getenv(EnvAlertWebhookURL),
 	}
 }
 

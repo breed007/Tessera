@@ -192,15 +192,26 @@ td button.rescan-subnet { padding: 3px 9px; }
 .conf-badge.medium { color: #d9c14d; border-color: rgba(217,193,77,.5); }
 .conf-badge.low { color: var(--faint); border-color: var(--hairline); }
 
-.dev-icon { width: 16px; height: 16px; vertical-align: -3px; margin-right: 7px; color: var(--accent); }
-.dev-icon-lg { width: 22px; height: 22px; vertical-align: -4px; margin-right: 9px; color: var(--accent); }
+/* Icons are monochrome (currentColor) SVGs. Rendering them via <img> forces them
+   to their own default fill (black). We instead use them as a CSS mask and paint
+   the shape with a theme color via background-color — so they're crisp and tinted
+   instead of dark/washed-out. */
+.dev-icon, .dev-icon-lg, .icon-tile .ic, .icon-cell .ic {
+  display: inline-block;
+  -webkit-mask: var(--i) center / contain no-repeat;
+  mask: var(--i) center / contain no-repeat;
+}
+.dev-icon { width: 16px; height: 16px; vertical-align: -3px; margin-right: 7px; background-color: var(--accent); }
+.dev-icon-lg { width: 22px; height: 22px; vertical-align: -4px; margin-right: 9px; background-color: var(--accent); }
 .icon-picker { display: flex; flex-wrap: wrap; gap: 6px; }
 .icon-tile { width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; background: var(--surface-raised); border: 1px solid var(--hairline); border-radius: 5px; cursor: pointer; color: var(--text); font-size: 11px; }
-.icon-tile img { width: 18px; height: 18px; }
+.icon-tile .ic { width: 18px; height: 18px; background-color: var(--text); }
 .icon-tile:hover { border-color: var(--accent); }
+.icon-tile:hover .ic { background-color: var(--accent); }
 .icon-tile.sel { border-color: var(--accent); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.icon-tile.sel .ic { background-color: var(--accent); }
 .icon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(66px, 1fr)); gap: 8px; margin-top: 8px; }
 .icon-cell { position: relative; background: var(--surface-raised); border: 1px solid var(--hairline); border-radius: 5px; padding: 8px 4px 4px; text-align: center; color: var(--text); }
-.icon-cell img { width: 22px; height: 22px; }
-.icon-cell span { display: block; font-size: 9px; color: var(--faint); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.icon-cell .ic { width: 22px; height: 22px; background-color: var(--text); }
+.icon-cell .lbl { display: block; font-size: 9px; color: var(--faint); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .icon-del { position: absolute; top: 2px; right: 3px; background: none; border: none; color: var(--absent); cursor: pointer; font-size: 13px; line-height: 1; }

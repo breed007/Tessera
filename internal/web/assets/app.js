@@ -177,7 +177,7 @@ function renderHosts(hosts) {
   }
   $("hosts-body").innerHTML = rows.map((h) => `
     <tr data-id="${esc(h.stable_id)}">
-      <td><img class="dev-icon" src="${esc(h.icon_url)}" alt="">${esc(h.display_name || "(unnamed)")}</td>
+      <td><span class="dev-icon" style="--i:url('${esc(h.icon_url)}')"></span>${esc(h.display_name || "(unnamed)")}</td>
       <td>${esc(h.device_class || "—")}</td>
       <td class="conf">${confBadge(h.device_class || h.os_guess ? h.confidence : 0)}</td>
       <td class="mono">${(h.ips || []).map(esc).join(", ") || "—"}</td>
@@ -237,7 +237,7 @@ async function openHost(id) {
     <h3>Icon</h3>
     <div class="icon-picker" id="icon-picker">
       <button class="icon-tile ${h.icon ? "" : "sel"}" data-icon="" title="Auto">A</button>
-      ${(await loadIcons()).map((i) => `<button class="icon-tile ${h.icon === i.id ? "sel" : ""}" data-icon="${esc(i.id)}" title="${esc(i.id)}"><img src="${esc(i.url)}" alt=""></button>`).join("")}
+      ${(await loadIcons()).map((i) => `<button class="icon-tile ${h.icon === i.id ? "sel" : ""}" data-icon="${esc(i.id)}" title="${esc(i.id)}"><span class="ic" style="--i:url('${esc(i.url)}')"></span></button>`).join("")}
     </div>` : "";
   const annotate = me.is_admin ? `
     <h3>Annotate</h3>
@@ -252,7 +252,7 @@ async function openHost(id) {
   const actions = me.is_admin ? `<div class="detail-actions"><button id="rescan-host" class="ghost" title="Actively probe this host's addresses now">↻ Rescan host</button></div>` : "";
 
   $("detail-body").innerHTML = `
-    <h2><img class="dev-icon-lg" src="${esc(d.icon_url)}" alt="">${esc(h.display_name || "(unnamed)")}</h2>
+    <h2><span class="dev-icon-lg" style="--i:url('${esc(d.icon_url)}')"></span>${esc(h.display_name || "(unnamed)")}</h2>
     ${actions}
     <dl class="kv">
       <dt>Stable ID</dt><dd class="mono">${esc(h.stable_id)}</dd>
@@ -401,7 +401,7 @@ async function openSettings() {
 
     <div class="settings-section"><h3>Device icons</h3>
       <p class="muted-note">${allIcons.length} icons available (${customIcons.length} custom). Icons auto-assign by vendor/OS/type; override per device on its detail page.</p>
-      <div class="icon-grid">${allIcons.map((i) => `<div class="icon-cell" title="${esc(i.id)} (${i.source})"><img src="${esc(i.url)}" alt="">${i.source === "custom" ? `<button class="icon-del" data-icon="${esc(i.id)}">×</button>` : ""}<span>${esc(i.id)}</span></div>`).join("")}</div>
+      <div class="icon-grid">${allIcons.map((i) => `<div class="icon-cell" title="${esc(i.id)} (${i.source})"><span class="ic" style="--i:url('${esc(i.url)}')"></span>${i.source === "custom" ? `<button class="icon-del" data-icon="${esc(i.id)}">×</button>` : ""}<span class="lbl">${esc(i.id)}</span></div>`).join("")}</div>
       <div class="field row" style="margin-top:10px">
         <input type="text" id="ic-id" placeholder="icon id (e.g. plex)" style="width:160px">
         <input type="text" id="ic-svg" placeholder="paste SVG markup" style="flex:1">

@@ -234,6 +234,17 @@ table.obs.full td { word-break: break-word; }
 .detail table { width: 100%; }
 .detail td, .detail th { word-break: break-word; }
 .detail .kv dd { word-break: break-word; }
+/* Security page */
+.sec-counts { display: flex; gap: 10px; margin: 4px 0 14px; }
+.sev-pill { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 9px; border-radius: 3px; border: 1px solid var(--hairline); white-space: nowrap; }
+.sev-pill.high { color: var(--absent); border-color: var(--absent); }
+.sev-pill.medium { color: #e0a23c; border-color: #e0a23c; }
+.sev-pill.low { color: var(--faint); }
+.sec-row { display: flex; align-items: center; gap: 12px; padding: 9px 10px; border: 1px solid var(--hairline); border-radius: 6px; background: var(--surface-raised); margin: 5px 0; font-size: 13px; }
+.sec-row:hover { border-color: var(--accent); }
+.sec-main { flex: 1; }
+.sec-detail { color: var(--faint); font-size: 12px; margin-top: 2px; }
+.sec-host { text-align: right; }
 /* Topology tree */
 .topo { margin: 8px 0; }
 .topo-row { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border: 1px solid var(--hairline); border-radius: 5px; background: var(--surface-raised); margin: 3px 0; font-size: 13px; }

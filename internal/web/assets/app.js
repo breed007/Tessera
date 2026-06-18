@@ -63,7 +63,7 @@ function renderUserbar() {
   const link = (v, label) => `<a class="nav-link" data-view="${v}">${label}</a>`;
   const settings = me.is_admin ? link("settings", "Settings") : "";
   $("userbar").innerHTML =
-    `<nav class="nav">${link("dashboard", "Dashboard")}${link("topology", "Topology")}${link("observations", "Observations")}${settings}</nav>` +
+    `<nav class="nav">${link("dashboard", "Dashboard")}${link("topology", "Topology")}${link("observations", "Observations")}${link("security", "Security")}${settings}</nav>` +
     `<b>${esc(me.username)}</b><span class="role">${esc(me.role)}</span><a id="nav-logout">Logout</a>`;
   for (const a of document.querySelectorAll("#userbar .nav-link")) a.onclick = () => showView(a.dataset.view);
   $("nav-logout").onclick = async () => { await post("/api/logout"); location.reload(); };
@@ -262,6 +262,38 @@ async function renderTopology() {
     <p class="muted-note">Built from UniFi uplinks and switch-port data. Click a device to open it.</p>
     <div class="topo">${roots}</div>${unplaced}`;
   for (const row of $("topology-body").querySelectorAll(".topo-row[data-id]:not([data-id=''])")) {
+    row.style.cursor = "pointer";
+    row.onclick = () => openHost(row.dataset.id);
+  }
+}
+
+// renderSecurity renders the exposed-services / posture findings (full page),
+// grouped by severity. Each finding links to its host.
+async function renderSecurity() {
+  const d = await getJSON("/api/security");
+  const findings = d.findings || [];
+  const counts = `<div class="sec-counts">
+    <span class="sev-pill high">${d.high} high</span>
+    <span class="sev-pill medium">${d.medium} medium</span>
+    <span class="sev-pill low">${d.low} low</span></div>`;
+  let body;
+  if (!findings.length) {
+    body = `<p class="muted-note">No exposed-service findings. (Findings come from the active prober's discovered open ports — set ports under Settings → Active prober and rescan.)</p>`;
+  } else {
+    body = findings.map((f) => `
+      <div class="sec-row" data-id="${esc(f.stable_id)}">
+        <span class="sev-pill ${esc(f.severity)}">${esc(f.severity)}</span>
+        <div class="sec-main">
+          <div><b>${esc(f.title)}</b>${f.port ? ` <span class="mono">${esc(f.proto)}/${f.port}</span>` : ""}</div>
+          <div class="sec-detail">${esc(f.detail)}</div>
+        </div>
+        <div class="sec-host"><span class="topo-name">${esc(f.host)}</span>${f.ip ? ` <span class="mono">${esc(f.ip)}</span>` : ""}</div>
+      </div>`).join("");
+  }
+  $("security-body").innerHTML = `<h2>Security posture <span class="badge">${findings.length}</span></h2>
+    <p class="muted-note">Reachable services worth reviewing — plaintext, remote-access, exposed databases, file sharing. These are things to confirm are intentional, not confirmed vulnerabilities.</p>
+    ${counts}${body}`;
+  for (const row of $("security-body").querySelectorAll(".sec-row[data-id]:not([data-id=''])")) {
     row.style.cursor = "pointer";
     row.onclick = () => openHost(row.dataset.id);
   }
@@ -834,7 +866,7 @@ $("detail-close").onclick = closePanels;
 $("overlay").onclick = closePanels;
 
 // ── full-page views (router) ─────────────────────────────────────────────────
-const VIEWS = ["dashboard", "topology", "observations", "settings"];
+const VIEWS = ["dashboard", "topology", "observations", "security", "settings"];
 function showView(name) {
   if (!VIEWS.includes(name)) name = "dashboard";
   closePanels();
@@ -845,6 +877,7 @@ function showView(name) {
   if (name === "topology") renderTopology();
   else if (name === "settings") openSettings();
   else if (name === "observations") renderObservations(true);
+  else if (name === "security") renderSecurity();
 }
 
 async function init() {

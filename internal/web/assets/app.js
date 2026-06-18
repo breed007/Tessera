@@ -342,6 +342,7 @@ const BRAND_COLORS = {
   amazon: "#ff9900", apple: "#e6ebed", google: "#4285f4", intel: "#1c91e6",
   microsoft: "#00a4ef", samsung: "#4263eb", synology: "#c7c8ca", ubiquiti: "#2596ff",
   android: "#3ddc84", ubuntu: "#e95420", debian: "#e0457b", raspberrypi: "#e5447a", linux: "#f6c915",
+  fortinet: "#ee3124", opnsense: "#f0703a", pfsense: "#d0d3d6",
 };
 // iconId pulls the icon id from its URL (…/icons/lib/<id> or …/icons/custom/<id>).
 const iconId = (url) => String(url || "").split("/").pop();

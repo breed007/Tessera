@@ -14,9 +14,10 @@ func TestAuto(t *testing.T) {
 		{"Unknown Vendor", "", "", "", "unknown"},
 		// Specific products/roles (often in the model field) → the new icons.
 		{"Intel Corporate", "Linux", "computer", "Proxmox", "virtualization"},
-		{"", "", "router / gateway", "pfSense", "firewall"},
-		{"", "", "", "OPNsense", "firewall"},
-		{"Fortinet, Inc.", "", "", "FortiGate 60F", "firewall"},
+		{"", "", "router / gateway", "pfSense", "pfsense"},
+		{"", "", "", "OPNsense", "opnsense"},
+		{"Fortinet, Inc.", "", "", "FortiGate 60F", "fortinet"},
+		{"", "", "firewall appliance", "", "firewall"}, // generic firewall, unknown vendor
 		{"eero inc.", "", "", "eero Pro 6", "access-point"},
 		{"", "", "computer", "Pi-hole", "adblock"},
 		{"", "", "", "AdGuard Home", "adblock"},

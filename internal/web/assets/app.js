@@ -686,6 +686,7 @@ async function openSettings() {
         ${chk("set-al-on", "Device back online", e.alert_online)}
         ${chk("set-al-ip", "IP changed", e.alert_ip_changed)}
         ${chk("set-al-cf", "New conflict", e.alert_conflict)}
+        ${chk("set-al-risk", "Risky service appeared", e.alert_risky_service)}
       </div>
       <button class="btn" id="btn-test-alert">Send test alert</button><span class="test-result" id="tr-alert"></span>
       <p class="muted-note">Changes apply after a restart. The first run after enabling learns the current devices silently (no flood).</p>
@@ -833,6 +834,7 @@ function wireSettings(canSec) {
       alerts_enabled: checked("set-al-en"), alerts_kind: $("set-al-kind").value,
       alert_new_device: checked("set-al-new"), alert_offline: checked("set-al-off"),
       alert_online: checked("set-al-on"), alert_ip_changed: checked("set-al-ip"), alert_conflict: checked("set-al-cf"),
+      alert_risky_service: checked("set-al-risk"),
     };
     const secrets = {};
     if (canSec) {

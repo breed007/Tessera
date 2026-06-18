@@ -135,7 +135,7 @@ func New(ctx context.Context, fileCfg config.Config, log *slog.Logger) (*App, er
 		alerts: alert.New(st, alert.Config{
 			Enabled: cfg.Alerts.Enabled, Kind: cfg.Alerts.Kind, URL: cfg.Secrets.AlertWebhookURL,
 			NewDevice: cfg.Alerts.NewDevice, Offline: cfg.Alerts.Offline, Online: cfg.Alerts.Online,
-			IPChanged: cfg.Alerts.IPChanged, Conflict: cfg.Alerts.Conflict,
+			IPChanged: cfg.Alerts.IPChanged, Conflict: cfg.Alerts.Conflict, RiskyService: cfg.Alerts.RiskyService,
 		}, log),
 	}
 

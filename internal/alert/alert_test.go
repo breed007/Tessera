@@ -73,6 +73,48 @@ func TestEngineBaselineThenNewDevice(t *testing.T) {
 	}
 }
 
+func TestEngineRiskyService(t *testing.T) {
+	var mu sync.Mutex
+	var got []Event
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		var ev Event
+		_ = json.Unmarshal(b, &ev)
+		mu.Lock()
+		got = append(got, ev)
+		mu.Unlock()
+	}))
+	defer srv.Close()
+
+	fs := &fakeStore{kv: map[string]string{}, snap: entity.Snapshot{
+		Hosts:     []entity.Host{{ID: 1, StableID: "mac:aa", DisplayName: "nas"}},
+		Addresses: []entity.Address{{IP: "10.0.0.5", HostID: id(1), State: entity.StateActive}},
+		Services:  []entity.Service{{HostID: id(1), Proto: "tcp", Port: 443}}, // not risky
+	}}
+	cfg := Config{Enabled: true, Kind: "webhook", URL: srv.URL, RiskyService: true}
+	e := New(fs, cfg, nil)
+	if err := e.Process(context.Background()); err != nil { // first run = silent baseline
+		t.Fatal(err)
+	}
+	mu.Lock()
+	n := len(got)
+	mu.Unlock()
+	if n != 0 {
+		t.Fatalf("baseline dispatched %d, want 0", n)
+	}
+
+	// Telnet appears on the host → one risky_service alert.
+	fs.snap.Services = append(fs.snap.Services, entity.Service{HostID: id(1), Proto: "tcp", Port: 23})
+	if err := e.Process(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(got) != 1 || got[0].Type != TypeRiskyService || got[0].Subject != "mac:aa" {
+		t.Fatalf("after telnet appears, alerts = %+v, want one risky_service for mac:aa", got)
+	}
+}
+
 func TestEngineDisabledNoop(t *testing.T) {
 	fs := &fakeStore{kv: map[string]string{}}
 	e := New(fs, Config{Enabled: false}, nil)

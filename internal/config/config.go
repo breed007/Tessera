@@ -191,11 +191,12 @@ type Secrets struct {
 type Alerts struct {
 	Enabled   bool   `yaml:"enabled"`
 	Kind      string `yaml:"kind"` // webhook | slack | discord | ntfy
-	NewDevice bool   `yaml:"new_device"`
-	Offline   bool   `yaml:"offline"`
-	Online    bool   `yaml:"online"`
-	IPChanged bool   `yaml:"ip_changed"`
-	Conflict  bool   `yaml:"conflict"`
+	NewDevice    bool `yaml:"new_device"`
+	Offline      bool `yaml:"offline"`
+	Online       bool `yaml:"online"`
+	IPChanged    bool `yaml:"ip_changed"`
+	Conflict     bool `yaml:"conflict"`
+	RiskyService bool `yaml:"risky_service"`
 }
 
 // Default returns a Config populated with the §5 defaults, before file/env

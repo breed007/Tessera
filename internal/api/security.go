@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/tessera/tessera/internal/entity"
+	"github.com/tessera/tessera/internal/portrisk"
 )
 
 // SecFinding is one exposed-service / posture observation worth an operator's
@@ -65,12 +66,12 @@ func (s *Server) handleSecurity(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		count[*sv.HostID]++
-		risk, ok := portRisk(sv.Port)
+		risk, ok := portrisk.Classify(sv.Port)
 		if !ok {
 			continue
 		}
 		out.Findings = append(out.Findings, SecFinding{
-			Severity: risk.sev, Category: risk.cat, Title: risk.title, Detail: risk.why,
+			Severity: risk.Severity, Category: risk.Category, Title: risk.Title, Detail: risk.Why,
 			StableID: h.StableID, Host: hostLabel(h), IP: ipOf[h.ID], Proto: sv.Proto, Port: sv.Port,
 		})
 	}
@@ -116,49 +117,3 @@ func hostLabel(h entity.Host) string {
 	return h.StableID
 }
 
-type risk struct{ sev, cat, title, why string }
-
-// portRisk classifies a reachable port. These are services worth *reviewing* on a
-// LAN (plaintext creds, remote-access, exposed databases, file sharing) — not
-// necessarily vulnerabilities, but things to confirm are intentional.
-func portRisk(port int) (risk, bool) {
-	if r, ok := portRiskTable[port]; ok {
-		return r, true
-	}
-	switch {
-	case port >= 5900 && port <= 5905:
-		return risk{"high", "remote-access", "VNC exposed", "VNC remote desktop — often weak or no authentication"}, true
-	case port >= 512 && port <= 514:
-		return risk{"medium", "legacy", "r-services exposed", "rexec/rlogin/rsh — legacy, plaintext"}, true
-	}
-	return risk{}, false
-}
-
-var portRiskTable = map[int]risk{
-	23:    {"high", "plaintext", "Telnet exposed", "Telnet — credentials and data sent in clear text"},
-	21:    {"high", "plaintext", "FTP exposed", "FTP — credentials and data sent in clear text"},
-	2375:  {"high", "admin", "Docker API (unencrypted)", "Unauthenticated remote control of the Docker daemon"},
-	6379:  {"high", "database", "Redis exposed", "Redis — frequently reachable without authentication"},
-	27017: {"high", "database", "MongoDB exposed", "MongoDB — frequently reachable without authentication"},
-	9200:  {"high", "database", "Elasticsearch exposed", "Elasticsearch — frequently reachable without authentication"},
-	11211: {"high", "database", "Memcached exposed", "Memcached — no authentication; UDP amplification risk"},
-	445:   {"high", "file-sharing", "SMB exposed", "SMB file sharing — common lateral-movement target"},
-	3389:  {"high", "remote-access", "RDP exposed", "Remote Desktop — frequent brute-force / exploit target"},
-
-	139:  {"medium", "file-sharing", "NetBIOS exposed", "Legacy Windows file/printer sharing"},
-	161:  {"medium", "management", "SNMP exposed", "SNMP — often left on a default community string"},
-	3306: {"medium", "database", "MySQL exposed", "MySQL/MariaDB reachable on the network"},
-	5432: {"medium", "database", "PostgreSQL exposed", "PostgreSQL reachable on the network"},
-	1433: {"medium", "database", "MSSQL exposed", "Microsoft SQL Server reachable on the network"},
-	1521: {"medium", "database", "Oracle DB exposed", "Oracle database reachable on the network"},
-	25:   {"medium", "mail", "SMTP exposed", "SMTP — verify this is not an open relay"},
-	389:  {"medium", "directory", "LDAP exposed", "LDAP directory service (cleartext)"},
-	873:  {"medium", "file-sharing", "rsync exposed", "rsync daemon reachable on the network"},
-	2376: {"medium", "admin", "Docker API (TLS)", "Docker daemon API reachable on the network"},
-	5601: {"medium", "admin", "Kibana exposed", "Kibana admin interface reachable"},
-
-	80:   {"low", "plaintext", "Plaintext HTTP", "HTTP — unencrypted web/admin interface"},
-	8080: {"low", "plaintext", "Plaintext HTTP", "HTTP-alt — unencrypted web/admin interface"},
-	8006: {"low", "admin", "Proxmox admin", "Proxmox VE web admin reachable"},
-	631:  {"low", "printing", "Printer admin", "IPP/printer administration reachable"},
-}

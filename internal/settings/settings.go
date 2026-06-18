@@ -57,11 +57,12 @@ type Editable struct {
 	// Alerts (the webhook URL itself is a secret; see SecretsInput.AlertURL).
 	AlertsEnabled   bool   `json:"alerts_enabled"`
 	AlertsKind      string `json:"alerts_kind"`
-	AlertNewDevice  bool   `json:"alert_new_device"`
-	AlertOffline    bool   `json:"alert_offline"`
-	AlertOnline     bool   `json:"alert_online"`
-	AlertIPChanged  bool   `json:"alert_ip_changed"`
-	AlertConflict   bool   `json:"alert_conflict"`
+	AlertNewDevice    bool `json:"alert_new_device"`
+	AlertOffline      bool `json:"alert_offline"`
+	AlertOnline       bool `json:"alert_online"`
+	AlertIPChanged    bool `json:"alert_ip_changed"`
+	AlertConflict     bool `json:"alert_conflict"`
+	AlertRiskyService bool `json:"alert_risky_service"`
 
 	// Discovery techniques (per-protocol toggles; all default on). Passive_*
 	// apply when the sensor is enabled; the rest when the active prober is.
@@ -212,7 +213,7 @@ func applyEditable(c *config.Config, e Editable) {
 	c.Alerts = config.Alerts{
 		Enabled: e.AlertsEnabled, Kind: e.AlertsKind,
 		NewDevice: e.AlertNewDevice, Offline: e.AlertOffline, Online: e.AlertOnline,
-		IPChanged: e.AlertIPChanged, Conflict: e.AlertConflict,
+		IPChanged: e.AlertIPChanged, Conflict: e.AlertConflict, RiskyService: e.AlertRiskyService,
 	}
 
 	b := func(v bool) *bool { return &v }
@@ -251,6 +252,7 @@ func extractEditable(c config.Config) Editable {
 		AlertOnline:          c.Alerts.Online,
 		AlertIPChanged:       c.Alerts.IPChanged,
 		AlertConflict:        c.Alerts.Conflict,
+		AlertRiskyService:    c.Alerts.RiskyService,
 		SensorEnabled:        c.Sensor.Enabled,
 
 		DiscPassiveARP:       d.PassiveARP,

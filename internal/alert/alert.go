@@ -18,15 +18,17 @@ import (
 	"time"
 
 	"github.com/tessera/tessera/internal/entity"
+	"github.com/tessera/tessera/internal/portrisk"
 )
 
 // Event types.
 const (
-	TypeNewDevice = "new_device"
-	TypeOffline   = "device_offline"
-	TypeOnline    = "device_online"
-	TypeIPChanged = "ip_changed"
-	TypeConflict  = "conflict"
+	TypeNewDevice    = "new_device"
+	TypeOffline      = "device_offline"
+	TypeOnline       = "device_online"
+	TypeIPChanged    = "ip_changed"
+	TypeConflict     = "conflict"
+	TypeRiskyService = "risky_service"
 )
 
 const stateKey = "alert.state"
@@ -45,11 +47,12 @@ type Config struct {
 	Enabled   bool
 	Kind      string // webhook | slack | discord | ntfy
 	URL       string // destination (webhook/ntfy topic URL); secret-sourced
-	NewDevice bool
-	Offline   bool
-	Online    bool
-	IPChanged bool
-	Conflict  bool
+	NewDevice    bool
+	Offline      bool
+	Online       bool
+	IPChanged    bool
+	Conflict     bool
+	RiskyService bool
 }
 
 func (c Config) wants(t string) bool {
@@ -64,6 +67,8 @@ func (c Config) wants(t string) bool {
 		return c.IPChanged
 	case TypeConflict:
 		return c.Conflict
+	case TypeRiskyService:
+		return c.RiskyService
 	}
 	return false
 }
@@ -98,6 +103,7 @@ type hostState struct {
 type state struct {
 	Hosts     map[string]hostState `json:"hosts"`
 	Conflicts map[string]bool      `json:"conflicts"`
+	Risky     map[string]bool      `json:"risky"` // "<stable_id>\x1f<proto>/<port>" seen risky services
 }
 
 // Process diffs the current entity layer against the last-seen state and
@@ -141,7 +147,11 @@ func (e *Engine) Process(ctx context.Context) error {
 		}
 	}
 
-	cur := state{Hosts: map[string]hostState{}, Conflicts: map[string]bool{}}
+	cur := state{Hosts: map[string]hostState{}, Conflicts: map[string]bool{}, Risky: map[string]bool{}}
+	hostByID := map[int64]entity.Host{}
+	for _, h := range snap.Hosts {
+		hostByID[h.ID] = h
+	}
 	var events []Event
 	for _, host := range snap.Hosts {
 		a := byHost[host.ID]
@@ -183,6 +193,34 @@ func (e *Engine) Process(ctx context.Context) error {
 		}
 	}
 
+	for _, sv := range snap.Services {
+		if sv.HostID == nil {
+			continue
+		}
+		host, ok := hostByID[*sv.HostID]
+		if !ok || host.Ignored {
+			continue
+		}
+		risk, risky := portrisk.Classify(sv.Port)
+		if !risky {
+			continue
+		}
+		key := fmt.Sprintf("%s\x1f%s/%d", host.StableID, sv.Proto, sv.Port)
+		cur.Risky[key] = true
+		if !firstRun && !prev.Risky[key] {
+			name := host.DisplayName
+			if name == "" {
+				name = host.StableID
+			}
+			ip := ""
+			if a := byHost[host.ID]; a != nil {
+				ip = a.ip
+			}
+			events = append(events, Event{TypeRiskyService, "Risky service",
+				fmt.Sprintf("🛡️ %s on %s%s: %s/%d — %s", risk.Severity, name, ipSuffix(ip), sv.Proto, sv.Port, risk.Why), host.StableID, time.Now()})
+		}
+	}
+
 	if !firstRun {
 		// Deterministic order so a burst reads sensibly.
 		sort.SliceStable(events, func(i, j int) bool { return events[i].Type < events[j].Type })
@@ -219,6 +257,9 @@ func (e *Engine) loadState(ctx context.Context) (state, bool, error) {
 	}
 	if s.Conflicts == nil {
 		s.Conflicts = map[string]bool{}
+	}
+	if s.Risky == nil {
+		s.Risky = map[string]bool{}
 	}
 	return s, false, nil
 }

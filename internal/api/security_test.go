@@ -70,11 +70,3 @@ func TestSecurityFindings(t *testing.T) {
 	}
 }
 
-func TestPortRisk(t *testing.T) {
-	if r, ok := portRisk(5901); !ok || r.sev != "high" { // VNC range
-		t.Errorf("5901 = %+v,%v want high VNC", r, ok)
-	}
-	if _, ok := portRisk(22); ok {
-		t.Error("ssh (22) should not be flagged")
-	}
-}

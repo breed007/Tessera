@@ -17,6 +17,7 @@
 #   online: false
 #   ip_changed: false
 #   conflict: true
+#   risky_service: true       # a risky/exposed service (Telnet, RDP, exposed DB…) appears
 
 sensor:
   # Master switch for ALL passive traffic inspection (packet capture). OFF by

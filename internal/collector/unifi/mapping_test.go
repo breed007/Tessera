@@ -189,6 +189,15 @@ func TestResolveUniFiModel(t *testing.T) {
 	if name, ok := resolveUniFiModel("udmpro"); !ok || name != "UDM Pro" { // case-insensitive
 		t.Errorf("udmpro = %q,%v want UDM Pro,true", name, ok)
 	}
+	// The ACTUAL stat/device model codes (unifi.network.model, e.g. "USWED77")
+	// must resolve — not just the marketing shortnames.
+	for code, want := range map[string]string{
+		"USWED77": "USW Pro XG 10 PoE", "USWED35": "USW Flex 2.5G 5", "USWED37": "USW Flex 2.5G 8 PoE",
+	} {
+		if name, ok := resolveUniFiModel(code); !ok || name != want {
+			t.Errorf("%s = %q,%v want %q", code, name, ok, want)
+		}
+	}
 	if _, ok := resolveUniFiModel("NOPE"); ok {
 		t.Error("unknown code should miss")
 	}

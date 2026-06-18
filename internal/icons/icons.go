@@ -20,7 +20,17 @@ func Auto(vendor, osGuess, deviceClass, model string) string {
 	// doesn't fall through to the generic TV icon, or a Proxmox box to its NIC
 	// vendor. Matched against class+model.
 	switch {
-	case has(dm, "vmware", "esxi", "proxmox", "hypervisor", "qemu", "virtual machine"), has(v, "vmware"):
+	case has(dm, "proxmox"):
+		return "proxmox"
+	case has(dm, "truenas", "freenas"):
+		return "truenas"
+	case has(dm, "openmediavault", "omv"):
+		return "openmediavault"
+	case has(dm, "unraid"):
+		return "unraid"
+	case has(dm, "docker", "portainer"):
+		return "docker"
+	case has(dm, "vmware", "esxi", "hypervisor", "qemu", "virtual machine"), has(v, "vmware"):
 		return "virtualization"
 	case has(dm, "pfsense"):
 		return "pfsense"
@@ -28,19 +38,43 @@ func Auto(vendor, osGuess, deviceClass, model string) string {
 		return "opnsense"
 	case has(dm, "fortinet", "fortigate", "fortios"), has(v, "fortinet"):
 		return "fortinet"
+	case has(dm, "openwrt", "dd-wrt", "ddwrt"):
+		return "openwrt"
 	case has(d, "firewall"):
 		return "firewall"
 	case has(dm, "pi-hole", "pihole", "adguard"):
 		return "adblock"
+	case has(dm, "home assistant", "homeassistant", "hass.io", "hassio"):
+		return "homeassistant"
 	case has(dm, "cloudflare"):
 		return "cloud"
 	case has(dm, "splunk", "elastic", "logstash", "kibana", "graylog"):
 		return "analytics"
-	case has(dm, "plex", "jellyfin", "emby", "media server"):
+	case has(dm, "plex"):
+		return "plex"
+	case has(dm, "jellyfin"):
+		return "jellyfin"
+	case has(dm, "kodi", "libreelec", "osmc"):
+		return "kodi"
+	case has(dm, "emby", "media server"):
 		return "media-server"
+	case has(dm, "roku"):
+		return "roku"
+	case has(dm, "sonos"), has(v, "sonos"):
+		return "sonos"
+	case has(dm, "shelly"), has(v, "shelly"):
+		return "shelly"
+	case has(dm, "philips hue", "hue bridge"), has(v, "signify"):
+		return "philipshue"
+	case has(dm, "lifx"), has(v, "lifx"):
+		return "lifx"
+	case has(dm, "wemo"), has(v, "belkin"):
+		return "wemo"
+	case has(dm, "smartthings"):
+		return "smartthings"
 	case has(dm, "doorbell"):
 		return "doorbell"
-	case has(dm, "esp32", "esp8266", "espressif", "microcontroller"), has(v, "espressif"):
+	case has(dm, "esp32", "esp8266", "espressif", "microcontroller", "arduino"), has(v, "espressif", "arduino"):
 		return "microcontroller"
 	case has(dm, "myq", "garage", "liftmaster", "chamberlain"):
 		return "garage"
@@ -79,8 +113,60 @@ func Auto(vendor, osGuess, deviceClass, model string) string {
 	case has(v, "amazon"):
 		return "amazon"
 	case has(v, "tp-link", "tplink"):
-		return "router"
-	case has(v, "philips", "sonos", "texas instruments"):
+		return "tplink"
+	case has(v, "netgear"):
+		return "netgear"
+	case has(v, "asus"): // covers ASUSTeK
+		return "asus"
+	case has(v, "mikrotik", "mikrotikls", "routerboard"):
+		return "mikrotik"
+	case has(v, "roku"):
+		return "roku"
+	case has(v, "cisco"):
+		return "cisco"
+	case has(v, "huawei"):
+		return "huawei"
+	case has(v, "nvidia"):
+		return "nvidia"
+	case has(v, "lg electronics", "lg innotek"):
+		return "lg"
+	case has(v, "sony"):
+		return "sony"
+	case has(v, "panasonic"):
+		return "panasonic"
+	case has(v, "xiaomi"):
+		return "xiaomi"
+	case has(v, "dell"):
+		return "dell"
+	case has(v, "hewlett", "hpe", "hp inc"):
+		return "hp"
+	case has(v, "lenovo"):
+		return "lenovo"
+	case has(v, "qnap"):
+		return "qnap"
+	case has(v, "acer"):
+		return "acer"
+	case has(v, "framework"):
+		return "framework"
+	case has(v, "super micro", "supermicro"):
+		return "supermicro"
+	case has(v, "ring llc"):
+		return "ring"
+	case has(v, "wyze"):
+		return "wyze"
+	case has(v, "oneplus"):
+		return "oneplus"
+	case has(v, "oppo"):
+		return "oppo"
+	case has(v, "motorola"):
+		return "motorola"
+	case has(v, "nokia"):
+		return "nokia"
+	case has(v, "epson"):
+		return "epson"
+	case has(v, "philips"): // home networks: typically a Hue bridge/bulb
+		return "philipshue"
+	case has(v, "texas instruments"):
 		return "iot"
 	}
 

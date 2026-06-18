@@ -343,6 +343,17 @@ const BRAND_COLORS = {
   microsoft: "#00a4ef", samsung: "#4263eb", synology: "#c7c8ca", ubiquiti: "#2596ff",
   android: "#3ddc84", ubuntu: "#e95420", debian: "#e0457b", raspberrypi: "#e5447a", linux: "#f6c915",
   fortinet: "#ee3124", opnsense: "#f0703a", pfsense: "#d0d3d6",
+  // Networking vendors / homelab / smart-home brands (official Simple Icons hues,
+  // dark ones lightened for legibility on the surface).
+  tplink: "#4acbd6", netgear: "#c7c8ca", asus: "#cfd3d6", mikrotik: "#8aa0ad", cisco: "#1ba0d7",
+  huawei: "#ff2d2d", openwrt: "#00b5e2", ring: "#1c9ad6", philipshue: "#2e90ff", sonos: "#e6ebed",
+  homeassistant: "#18bcf2", shelly: "#4495d1", wyze: "#1df0bb", lifx: "#d8d8d8", smartthings: "#15bfff",
+  wemo: "#72d44c", roku: "#8b5cc7", plex: "#ebaf00", jellyfin: "#00a4dc", kodi: "#17b2e7",
+  nvidia: "#76b900", lg: "#e3486f", sony: "#e6ebed", panasonic: "#2f6fd6", xiaomi: "#ff6900", dell: "#0096d6",
+  hp: "#0096d6", lenovo: "#e2231a", qnap: "#3a6fd6", acer: "#83b81a", framework: "#cfd3d6",
+  supermicro: "#5566cc", truenas: "#0095d5", openmediavault: "#5dacdf", proxmox: "#e57000",
+  docker: "#2496ed", unraid: "#f15a2c", oneplus: "#f5010c", oppo: "#3fa65f", motorola: "#4a90e2",
+  nokia: "#3a7fff", epson: "#3a6fd6",
 };
 // iconId pulls the icon id from its URL (…/icons/lib/<id> or …/icons/custom/<id>).
 const iconId = (url) => String(url || "").split("/").pop();

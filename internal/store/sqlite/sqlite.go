@@ -213,6 +213,102 @@ func (s *Store) RecentObservations(ctx context.Context, limit int) ([]observatio
 }
 
 // ForSubjects returns observations for the given subjects, newest first.
+// QueryObservations returns a filtered, paginated page (newest first) and the
+// total matching rows.
+func (s *Store) QueryObservations(ctx context.Context, f store.ObservationFilter) ([]observation.Observation, int, error) {
+	var where []string
+	var args []any
+	if f.Source != "" {
+		where = append(where, "source = ?")
+		args = append(args, f.Source)
+	}
+	if f.Attribute != "" {
+		where = append(where, "attribute = ?")
+		args = append(args, f.Attribute)
+	}
+	if q := strings.TrimSpace(f.Query); q != "" {
+		where = append(where, "(subject LIKE ? OR value LIKE ?)")
+		like := "%" + q + "%"
+		args = append(args, like, like)
+	}
+	clause := ""
+	if len(where) > 0 {
+		clause = "WHERE " + strings.Join(where, " AND ")
+	}
+
+	var total int
+	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(1) FROM observations "+clause, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("sqlite: count observations: %w", err)
+	}
+	limit := f.Limit
+	if limit <= 0 || limit > 1000 {
+		limit = 200
+	}
+	offset := f.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, observed_at, source, collector_id, subject_type, subject, attribute, value, confidence, raw
+		FROM observations `+clause+` ORDER BY observed_at DESC, id DESC LIMIT ? OFFSET ?`,
+		append(append([]any{}, args...), limit, offset)...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("sqlite: query observations: %w", err)
+	}
+	defer rows.Close()
+	var out []observation.Observation
+	for rows.Next() {
+		var (
+			obs            observation.Observation
+			observed       string
+			src, styp, att string
+			raw            sql.NullString
+		)
+		if err := rows.Scan(&obs.ID, &observed, &src, &obs.CollectorID, &styp,
+			&obs.Subject, &att, &obs.Value, &obs.Confidence, &raw); err != nil {
+			return nil, 0, err
+		}
+		obs.ObservedAt, _ = parseTime(observed)
+		obs.Source = observation.Source(src)
+		obs.SubjectType = observation.SubjectType(styp)
+		obs.Attribute = observation.Attribute(att)
+		if raw.Valid {
+			obs.Raw = []byte(raw.String)
+		}
+		out = append(out, obs)
+	}
+	return out, total, rows.Err()
+}
+
+// ObservationFacets returns the distinct sources and attributes present.
+func (s *Store) ObservationFacets(ctx context.Context) ([]string, []string, error) {
+	distinct := func(col string) ([]string, error) {
+		rows, err := s.db.QueryContext(ctx, "SELECT DISTINCT "+col+" FROM observations ORDER BY "+col)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		var out []string
+		for rows.Next() {
+			var v string
+			if err := rows.Scan(&v); err != nil {
+				return nil, err
+			}
+			out = append(out, v)
+		}
+		return out, rows.Err()
+	}
+	sources, err := distinct("source")
+	if err != nil {
+		return nil, nil, fmt.Errorf("sqlite: distinct sources: %w", err)
+	}
+	attrs, err := distinct("attribute")
+	if err != nil {
+		return nil, nil, fmt.Errorf("sqlite: distinct attributes: %w", err)
+	}
+	return sources, attrs, nil
+}
+
 func (s *Store) ForSubjects(ctx context.Context, subjects []string) ([]observation.Observation, error) {
 	if len(subjects) == 0 {
 		return nil, nil

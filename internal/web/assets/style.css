@@ -217,6 +217,23 @@ td button.rescan-subnet { padding: 3px 9px; }
 .change:last-child { border-bottom: none; }
 .change b { color: var(--accent); }
 .change-time { color: var(--faint); font-size: 11px; margin-right: 8px; }
+/* Full-page views + top nav */
+.view { display: flex; flex-direction: column; gap: 18px; }
+.nav { display: flex; gap: 4px; margin-right: 10px; }
+.nav-link { padding: 4px 10px; border-radius: 5px; border: 1px solid transparent; color: var(--muted); cursor: pointer; }
+.nav-link:hover { color: var(--text); border-color: var(--hairline); }
+.nav-link.active { color: var(--accent); border-color: var(--accent-dim); }
+/* Observations page */
+.obs-filters { display: flex; gap: 8px; margin: 4px 0 12px; flex-wrap: wrap; }
+.obs-filters .search { flex: 1; min-width: 220px; margin: 0; }
+.obs-filters select { padding: 8px 10px; background: var(--bg); border: 1px solid var(--hairline); border-radius: 5px; color: var(--text); font-family: var(--mono); font-size: 12px; }
+table.obs.full { width: 100%; }
+table.obs.full td { word-break: break-word; }
+.obs-pager { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+/* Slide-over: keep wide content from clipping — fit + wrap instead of scrolling sideways */
+.detail table { width: 100%; }
+.detail td, .detail th { word-break: break-word; }
+.detail .kv dd { word-break: break-word; }
 /* Topology tree */
 .topo { margin: 8px 0; }
 .topo-row { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border: 1px solid var(--hairline); border-radius: 5px; background: var(--surface-raised); margin: 3px 0; font-size: 13px; }

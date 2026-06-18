@@ -28,6 +28,13 @@ type ObservationLog interface {
 	// RecentObservations returns the newest observations (for the UI's
 	// observation drill-down), most recent first.
 	RecentObservations(ctx context.Context, limit int) ([]observation.Observation, error)
+	// QueryObservations returns a filtered, paginated page of observations
+	// (newest first) plus the total matching the filter — for the searchable
+	// observations page.
+	QueryObservations(ctx context.Context, f ObservationFilter) (rows []observation.Observation, total int, err error)
+	// ObservationFacets returns the distinct sources and attributes present, for
+	// populating the observation filter dropdowns.
+	ObservationFacets(ctx context.Context) (sources, attributes []string, err error)
 	// ForSubjects returns observations whose subject is in subjects, newest
 	// first — the provenance trail behind an entity (§1 honest confidence).
 	ForSubjects(ctx context.Context, subjects []string) ([]observation.Observation, error)
@@ -36,6 +43,16 @@ type ObservationLog interface {
 	// bounding the append-only log's growth while preserving first_seen/last_seen
 	// and the reconciled result. Returns the number of rows removed (§M9).
 	CompactLog(ctx context.Context) (removed int64, err error)
+}
+
+// ObservationFilter narrows and pages the observation query. Empty fields are
+// ignored; Query substring-matches subject or value.
+type ObservationFilter struct {
+	Source    string
+	Attribute string
+	Query     string
+	Limit     int
+	Offset    int
 }
 
 // EntityStore persists the reconciled entity layer (§3.2). Only the reconciler

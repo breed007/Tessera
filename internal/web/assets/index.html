@@ -29,32 +29,53 @@
   </header>
 
   <main>
-    <section id="devices-section" class="panel">
-      <h2>Devices</h2>
-      <div id="device-tabs" class="tabs"></div>
-      <p id="device-hint" class="hint"></p>
-      <div id="device-list" class="cards"></div>
-    </section>
+    <div id="view-dashboard" class="view">
+      <section id="devices-section" class="panel">
+        <h2>Devices</h2>
+        <div id="device-tabs" class="tabs"></div>
+        <p id="device-hint" class="hint"></p>
+        <div id="device-list" class="cards"></div>
+      </section>
 
+      <section class="panel">
+        <h2>Inventory</h2>
+        <input type="search" id="host-search" class="search" placeholder="Search name, IP, MAC, vendor, model…" autocomplete="off">
+        <table id="hosts">
+          <thead>
+            <tr>
+              <th data-sort="name">Name</th>
+              <th data-sort="device">Device / Hardware</th>
+              <th data-sort="conf">Confidence</th>
+              <th data-sort="addr">Addresses</th>
+              <th data-sort="vendor">Vendor</th>
+              <th data-sort="expected">Expected</th>
+              <th data-sort="seen">Last seen</th>
+            </tr>
+          </thead>
+          <tbody id="hosts-body"></tbody>
+        </table>
+      </section>
+    </div>
 
-    <section class="panel">
-      <h2>Inventory</h2>
-      <input type="search" id="host-search" class="search" placeholder="Search name, IP, MAC, vendor, model…" autocomplete="off">
-      <table id="hosts">
-        <thead>
-          <tr>
-            <th data-sort="name">Name</th>
-            <th data-sort="device">Device / Hardware</th>
-            <th data-sort="conf">Confidence</th>
-            <th data-sort="addr">Addresses</th>
-            <th data-sort="vendor">Vendor</th>
-            <th data-sort="expected">Expected</th>
-            <th data-sort="seen">Last seen</th>
-          </tr>
-        </thead>
-        <tbody id="hosts-body"></tbody>
-      </table>
-    </section>
+    <div id="view-topology" class="view hidden"><section class="panel"><div id="topology-body"></div></section></div>
+
+    <div id="view-observations" class="view hidden">
+      <section class="panel">
+        <h2>Observations <span id="obs-total" class="badge"></span></h2>
+        <div class="obs-filters">
+          <input type="search" id="obs-q" class="search" placeholder="Search subject or value…" autocomplete="off">
+          <select id="obs-source"><option value="">All sources</option></select>
+          <select id="obs-attr"><option value="">All attributes</option></select>
+        </div>
+        <table class="obs full">
+          <thead><tr><th>Time</th><th>Source</th><th>Subject</th><th>Attribute</th><th>Value</th><th>Conf</th></tr></thead>
+          <tbody id="obs-body"></tbody>
+        </table>
+        <div class="obs-pager"><button id="obs-more" class="btn hidden">Load more</button><span id="obs-shown" class="muted-note"></span></div>
+      </section>
+    </div>
+
+    <div id="view-settings" class="view hidden"><section class="panel"><div id="settings-body"></div></section></div>
   </main>
 
   <footer id="footer"></footer>
@@ -64,11 +85,6 @@
     <div id="detail-body"></div>
   </aside>
   <div id="overlay" class="overlay hidden"></div>
-
-  <aside id="settings" class="detail settings-panel hidden">
-    <button id="settings-close" class="close">&times;</button>
-    <div id="settings-body"></div>
-  </aside>
 
   <div id="login" class="login-overlay hidden">
     <form id="login-form" class="login-card hidden">

@@ -60,10 +60,12 @@ $("setup-form").onsubmit = async (e) => {
 };
 
 function renderUserbar() {
-  const gear = me.is_admin ? `<a id="nav-settings">Settings</a>` : "";
-  $("userbar").innerHTML = `<b>${esc(me.username)}</b><span class="role">${esc(me.role)}</span><a id="nav-topology">Topology</a>${gear}<a id="nav-logout">Logout</a>`;
-  $("nav-topology").onclick = openTopology;
-  if (me.is_admin) $("nav-settings").onclick = openSettings;
+  const link = (v, label) => `<a class="nav-link" data-view="${v}">${label}</a>`;
+  const settings = me.is_admin ? link("settings", "Settings") : "";
+  $("userbar").innerHTML =
+    `<nav class="nav">${link("dashboard", "Dashboard")}${link("topology", "Topology")}${link("observations", "Observations")}${settings}</nav>` +
+    `<b>${esc(me.username)}</b><span class="role">${esc(me.role)}</span><a id="nav-logout">Logout</a>`;
+  for (const a of document.querySelectorAll("#userbar .nav-link")) a.onclick = () => showView(a.dataset.view);
   $("nav-logout").onclick = async () => { await post("/api/logout"); location.reload(); };
 }
 
@@ -86,9 +88,7 @@ function renderSummary(s) {
 async function openDrill(kind) {
   try {
     if (kind === "observations") {
-      const rows = await getJSON("/api/observations?limit=500");
-      renderDrill("Observations", ["Time", "Source", "Subject", "Attribute", "Value", "Conf"],
-        rows.map((o) => [fmtTime(o.observed_at), o.source, o.subject, o.attribute, o.value, o.confidence]));
+      showView("observations");
     } else if (kind === "subnets") {
       renderSubnets(await getJSON("/api/subnets"));
     } else if (kind === "conflicts") {
@@ -96,9 +96,49 @@ async function openDrill(kind) {
     } else if (kind === "services") {
       await openServices();
     } else {
+      showView("dashboard");
       document.getElementById("hosts").scrollIntoView({ behavior: "smooth", block: "start" });
     }
   } catch (e) { toast(e.message); }
+}
+
+// ── observations page (server-side search/filter/paginate) ───────────────────
+let obsState = { q: "", source: "", attr: "", offset: 0, total: 0 };
+let obsTimer = null;
+
+async function renderObservations(reset) {
+  if (reset) {
+    obsState.q = $("obs-q").value.trim();
+    obsState.source = $("obs-source").value;
+    obsState.attr = $("obs-attr").value;
+    obsState.offset = 0;
+    $("obs-body").innerHTML = "";
+  }
+  const p = new URLSearchParams({ limit: "200", offset: String(obsState.offset), q: obsState.q, source: obsState.source, attribute: obsState.attr });
+  const page = await getJSON("/api/observations?" + p.toString());
+  obsState.total = page.total;
+  // Populate facet dropdowns on the first page (preserving the current choice).
+  if (page.sources) fillFacet("obs-source", page.sources, obsState.source, "All sources");
+  if (page.attributes) fillFacet("obs-attr", page.attributes, obsState.attr, "All attributes");
+  const rows = (page.rows || []).map((o) =>
+    `<tr><td class="mono">${fmtTime(o.observed_at)}</td><td class="src">${esc(o.source)}</td><td class="mono">${esc(o.subject)}</td><td>${esc(o.attribute)}</td><td>${esc(o.value)}</td><td class="conf">${o.confidence}</td></tr>`).join("");
+  $("obs-body").insertAdjacentHTML("beforeend", rows);
+  obsState.offset += (page.rows || []).length;
+  $("obs-total").textContent = obsState.total;
+  $("obs-shown").textContent = `showing ${obsState.offset} of ${obsState.total}`;
+  $("obs-more").classList.toggle("hidden", obsState.offset >= obsState.total);
+}
+
+function fillFacet(id, values, selected, allLabel) {
+  const el = $(id);
+  el.innerHTML = `<option value="">${allLabel}</option>` + values.map((v) => `<option value="${esc(v)}" ${v === selected ? "selected" : ""}>${esc(v)}</option>`).join("");
+}
+
+function setupObservations() {
+  $("obs-q").oninput = () => { clearTimeout(obsTimer); obsTimer = setTimeout(() => renderObservations(true), 250); };
+  $("obs-source").onchange = () => renderObservations(true);
+  $("obs-attr").onchange = () => renderObservations(true);
+  $("obs-more").onclick = () => renderObservations(false);
 }
 
 // openServices lists discovered services grouped by friendly name (alphabetical),
@@ -198,9 +238,9 @@ async function openSubnet(id) {
   openPanel("detail");
 }
 
-// openTopology renders the educated network tree: gateway → switches → APs →
-// clients, with the port + link speed each device connects through.
-async function openTopology() {
+// renderTopology renders the educated network tree (full page): gateway →
+// switches → APs → clients, with the port + link speed each device connects via.
+async function renderTopology() {
   const d = await getJSON("/api/topology");
   const nodeHTML = (n) => {
     const link = (n.port || n.speed)
@@ -218,14 +258,13 @@ async function openTopology() {
   const unplaced = (d.unplaced || []).length
     ? `<details class="topo-unplaced"><summary>Unplaced devices <span class="badge">${d.unplaced.length}</span></summary>${d.unplaced.map(nodeHTML).join("")}</details>`
     : "";
-  $("detail-body").innerHTML = `<h2>Network topology</h2>
+  $("topology-body").innerHTML = `<h2>Network topology</h2>
     <p class="muted-note">Built from UniFi uplinks and switch-port data. Click a device to open it.</p>
     <div class="topo">${roots}</div>${unplaced}`;
-  for (const row of $("detail-body").querySelectorAll(".topo-row[data-id]:not([data-id=''])")) {
+  for (const row of $("topology-body").querySelectorAll(".topo-row[data-id]:not([data-id=''])")) {
     row.style.cursor = "pointer";
     row.onclick = () => openHost(row.dataset.id);
   }
-  openPanel("detail");
 }
 
 function renderDrill(title, cols, rows) {
@@ -682,7 +721,6 @@ async function openSettings() {
     <button class="primary" id="btn-save-settings">Save settings</button>`;
 
   wireSettings(canSec);
-  openPanel("settings");
 }
 
 function secFieldless(id, label) {
@@ -789,17 +827,34 @@ const splitList = (s) => s.split(",").map((x) => x.trim()).filter(Boolean);
 // ── panels / chrome ──────────────────────────────────────────────────────────
 
 function openPanel(id) { $(id).classList.remove("hidden"); $("overlay").classList.remove("hidden"); }
-function closePanels() { $("detail").classList.add("hidden"); $("settings").classList.add("hidden"); $("overlay").classList.add("hidden"); }
+function closePanels() { $("detail").classList.add("hidden"); $("overlay").classList.add("hidden"); }
 function toast(msg) { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2200); }
 
 $("detail-close").onclick = closePanels;
-$("settings-close").onclick = closePanels;
 $("overlay").onclick = closePanels;
+
+// ── full-page views (router) ─────────────────────────────────────────────────
+const VIEWS = ["dashboard", "topology", "observations", "settings"];
+function showView(name) {
+  if (!VIEWS.includes(name)) name = "dashboard";
+  closePanels();
+  for (const v of VIEWS) $("view-" + v).classList.toggle("hidden", v !== name);
+  for (const a of document.querySelectorAll("#userbar .nav-link")) a.classList.toggle("active", a.dataset.view === name);
+  if (location.hash !== "#" + name) location.hash = name;
+  window.scrollTo(0, 0);
+  if (name === "topology") renderTopology();
+  else if (name === "settings") openSettings();
+  else if (name === "observations") renderObservations(true);
+}
 
 async function init() {
   try { me = await fetch("/api/me").then((r) => (r.ok ? r.json() : Promise.reject())); }
   catch { showLogin(); return; }
-  hideLogin(); renderUserbar(); setupSortHeaders(); renderFooter(); refresh().catch((e) => $("summary").textContent = "error: " + e.message);
+  hideLogin(); renderUserbar(); setupSortHeaders(); setupObservations(); renderFooter();
+  await refresh().catch((e) => $("summary").textContent = "error: " + e.message);
+  // Restore the view from the URL hash (deep-link / back-button), default dashboard.
+  showView((location.hash || "").replace("#", "") || "dashboard");
+  window.onhashchange = () => showView((location.hash || "").replace("#", "") || "dashboard");
 }
 async function renderFooter() {
   try {

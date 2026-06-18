@@ -10,6 +10,7 @@ import (
 
 	"github.com/tessera/tessera/internal/entity"
 	"github.com/tessera/tessera/internal/observation"
+	"github.com/tessera/tessera/internal/store"
 )
 
 // HostRow is a host plus its bound identities, for the inventory table.
@@ -219,28 +220,49 @@ func computeChanges(obs []observation.Observation) []ChangeView {
 	return out
 }
 
-// handleObservations returns the most recent raw log entries (the observation
-// drill-down). ?limit=N caps the result (default 300).
+// ObservationsPage is a filtered, paginated slice of the log plus the totals and
+// facet lists the searchable observations page needs.
+type ObservationsPage struct {
+	Rows       []ObservationView `json:"rows"`
+	Total      int               `json:"total"`
+	Offset     int               `json:"offset"`
+	Sources    []string          `json:"sources,omitempty"`
+	Attributes []string          `json:"attributes,omitempty"`
+}
+
+// handleObservations serves the observations page: filterable by source,
+// attribute, and a subject/value substring, paginated by limit/offset. Facets
+// (distinct sources/attributes) are included on the first page for the dropdowns.
 func (s *Server) handleObservations(w http.ResponseWriter, r *http.Request) {
-	limit := 300
-	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			limit = n
-		}
-	}
-	obs, err := s.store.RecentObservations(r.Context(), limit)
+	q := r.URL.Query()
+	limit := atoiDefault(q.Get("limit"), 200)
+	offset := atoiDefault(q.Get("offset"), 0)
+	obs, total, err := s.store.QueryObservations(r.Context(), store.ObservationFilter{
+		Source: q.Get("source"), Attribute: q.Get("attribute"), Query: q.Get("q"),
+		Limit: limit, Offset: offset,
+	})
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	out := make([]ObservationView, 0, len(obs))
+	page := ObservationsPage{Rows: make([]ObservationView, 0, len(obs)), Total: total, Offset: offset}
 	for _, o := range obs {
-		out = append(out, ObservationView{
+		page.Rows = append(page.Rows, ObservationView{
 			ObservedAt: o.ObservedAt, Source: string(o.Source), Subject: o.Subject,
 			Attribute: string(o.Attribute), Value: o.Value, Confidence: o.Confidence,
 		})
 	}
-	writeJSON(w, http.StatusOK, out)
+	if offset == 0 {
+		page.Sources, page.Attributes, _ = s.store.ObservationFacets(r.Context())
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
+func atoiDefault(s string, def int) int {
+	if n, err := strconv.Atoi(s); err == nil && n >= 0 {
+		return n
+	}
+	return def
 }
 
 func (s *Server) handleSubnets(w http.ResponseWriter, r *http.Request) {

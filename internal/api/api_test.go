@@ -152,6 +152,29 @@ func TestAnnotationReflected(t *testing.T) {
 	}
 }
 
+func TestTagsRoundTrip(t *testing.T) {
+	ts := setup(t)
+	// Multiple tags; whitespace + an embedded comma should be normalized away.
+	r := authPost(t, ts.URL+"/api/host/annotate", map[string]any{
+		"stable_id": "mac:b8:27:eb:11:22:33", "tags": []string{" iot ", "cameras", "a,b", ""},
+	})
+	if r.StatusCode != 200 {
+		t.Fatalf("annotate tags → %d", r.StatusCode)
+	}
+	r.Body.Close()
+	detail := getJSON[HostDetail](t, ts.URL+"/api/host?id=mac:b8:27:eb:11:22:33")
+	got := detail.Host.Tags
+	want := []string{"iot", "cameras", "a b"}
+	if len(got) != len(want) {
+		t.Fatalf("tags = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("tag[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
 func TestIgnoreStatus(t *testing.T) {
 	ts := setup(t)
 	r := authPost(t, ts.URL+"/api/host/annotate", map[string]any{

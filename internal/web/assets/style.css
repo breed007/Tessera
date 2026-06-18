@@ -245,6 +245,26 @@ table.obs.full td { word-break: break-word; }
 .sec-main { flex: 1; }
 .sec-detail { color: var(--faint); font-size: 12px; margin-top: 2px; }
 .sec-host { text-align: right; }
+/* Tags */
+.tag-chip { display: inline-block; font-size: 10px; line-height: 1.6; padding: 0 8px; border-radius: 10px; color: var(--tc, var(--accent)); border: 1px solid var(--tc, var(--accent-dim)); white-space: nowrap; }
+.tag-chip.click { cursor: pointer; }
+.tag-chip.click:hover { filter: brightness(1.2); }
+.tag-chip .clear { cursor: pointer; margin-left: 2px; opacity: 0.8; }
+.tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.filterbar { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; flex-wrap: wrap; min-height: 1px; }
+.filterbar .grow { flex: 1; }
+.view-select { padding: 5px 9px; background: var(--bg); border: 1px solid var(--hairline); border-radius: 5px; color: var(--text); font-family: var(--mono); font-size: 12px; }
+/* Switch port-map faceplate */
+.faceplate { background: var(--surface-raised); border: 1px solid var(--hairline); border-radius: 6px; padding: 12px; margin: 10px 0; }
+.faceplate-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.faceplate-head .topo-link { margin-left: auto; }
+.ports { display: flex; flex-wrap: wrap; gap: 6px; }
+.port { width: 72px; min-height: 38px; border: 1px solid var(--hairline); border-radius: 4px; padding: 3px 5px; background: var(--bg); overflow: hidden; }
+.port.occ { border-color: var(--accent-dim); }
+.port.free { opacity: 0.45; }
+.port.occ[data-id]:hover { border-color: var(--accent); }
+.port-num { display: block; font-size: 9px; color: var(--faint); }
+.port-dev { display: block; font-size: 11px; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Topology tree */
 .topo { margin: 8px 0; }
 .topo-row { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border: 1px solid var(--hairline); border-radius: 5px; background: var(--surface-raised); margin: 3px 0; font-size: 13px; }

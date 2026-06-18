@@ -151,6 +151,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/services", s.handleServices)
 	mux.HandleFunc("GET /api/topology", s.handleTopology)
 	mux.HandleFunc("GET /api/security", s.handleSecurity)
+	mux.HandleFunc("GET /api/portmap", s.handlePortmap)
 	mux.HandleFunc("GET /api/conflicts", s.handleConflicts)
 	mux.HandleFunc("GET /api/new", s.handleNewDevices)
 	mux.HandleFunc("GET /api/observations", s.handleObservations)

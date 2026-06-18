@@ -63,7 +63,7 @@ function renderUserbar() {
   const link = (v, label) => `<a class="nav-link" data-view="${v}">${label}</a>`;
   const settings = me.is_admin ? link("settings", "Settings") : "";
   $("userbar").innerHTML =
-    `<nav class="nav">${link("dashboard", "Dashboard")}${link("topology", "Topology")}${link("observations", "Observations")}${link("security", "Security")}${settings}</nav>` +
+    `<nav class="nav">${link("dashboard", "Dashboard")}${link("topology", "Topology")}${link("ports", "Ports")}${link("observations", "Observations")}${link("security", "Security")}${settings}</nav>` +
     `<b>${esc(me.username)}</b><span class="role">${esc(me.role)}</span><a id="nav-logout">Logout</a>`;
   for (const a of document.querySelectorAll("#userbar .nav-link")) a.onclick = () => showView(a.dataset.view);
   $("nav-logout").onclick = async () => { await post("/api/logout"); location.reload(); };
@@ -299,6 +299,34 @@ async function renderSecurity() {
   }
 }
 
+// renderPortmap draws each switch as a faceplate: a row of numbered port cells,
+// occupied ones labeled with the connected device + speed (click → host).
+async function renderPortmap() {
+  const d = await getJSON("/api/portmap");
+  const switches = d.switches || [];
+  const faceplate = (sw) => {
+    const cells = sw.ports.map((p) => {
+      const occ = p.device ? "occ" : "free";
+      const title = p.device ? `${p.device}${p.speed ? " · " + p.speed : ""}${p.vlan != null ? " · VLAN " + p.vlan : ""}` : "empty";
+      return `<div class="port ${occ}" data-id="${esc(p.stable_id || "")}" title="Port ${p.port} — ${esc(title)}">
+        <span class="port-num">${p.port}</span>${p.device ? `<span class="port-dev">${esc(p.device)}</span>` : ""}</div>`;
+    }).join("");
+    return `<div class="faceplate">
+      <div class="faceplate-head"><span class="dev-icon" style="${iconStyle(sw.icon_url, "var(--accent)")}"></span>
+        <b>${esc(sw.name)}</b>${sw.model ? ` <span class="topo-sub">${esc(sw.model)}</span>` : ""}
+        <span class="topo-link">${sw.used}/${sw.total} ports</span></div>
+      <div class="ports">${cells}</div></div>`;
+  };
+  const body = switches.length ? switches.map(faceplate).join("")
+    : `<p class="muted-note">No switch port data yet — connect the UniFi controller (uplinks + switch-port assignments build this).</p>`;
+  $("ports-body").innerHTML = `<h2>Switch ports</h2>
+    <p class="muted-note">Patch-panel view — each switch's ports and what's connected, from UniFi topology. Click an occupied port to open the device.</p>${body}`;
+  for (const c of $("ports-body").querySelectorAll(".port.occ[data-id]:not([data-id=''])")) {
+    c.style.cursor = "pointer";
+    c.onclick = () => openHost(c.dataset.id);
+  }
+}
+
 function renderDrill(title, cols, rows) {
   $("detail-body").innerHTML = `<h2>${esc(title)} <span class="badge">${rows.length}</span></h2>
     <table class="obs"><thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead>
@@ -332,6 +360,16 @@ function confBadge(conf) {
 let hostsData = [];
 let hostSort = { key: null, dir: 1 };
 let hostQuery = "";
+let tagFilter = ""; // exact-tag inventory filter (set by clicking a tag chip)
+
+// tagColor derives a stable, legible-on-dark color from a tag name.
+function tagColor(tag) {
+  let h = 0;
+  for (let i = 0; i < tag.length; i++) h = (h * 31 + tag.charCodeAt(i)) >>> 0;
+  return `hsl(${h % 360} 55% 62%)`;
+}
+const tagChips = (tags, clickable) => (tags || []).map((t) =>
+  `<span class="tag-chip${clickable ? " click" : ""}" data-tag="${esc(t)}" style="--tc:${tagColor(t)}">${esc(t)}</span>`).join("");
 
 // sortKeyFns map each sortable column to a comparable value for a host row.
 const sortKeyFns = {
@@ -359,13 +397,15 @@ function ipSortKey(ip) {
 function hostMatches(h, q) {
   if (!q) return true;
   const hay = [h.display_name, h.vendor, h.model, h.device_class, h.os_guess,
-    (h.ips || []).join(" "), (h.macs || []).join(" ")].join(" ").toLowerCase();
+    (h.ips || []).join(" "), (h.macs || []).join(" "), (h.tags || []).join(" ")].join(" ").toLowerCase();
   return q.split(/\s+/).every((term) => hay.includes(term));
 }
 
 function renderHosts(hosts) {
   if (hosts) hostsData = hosts;
-  let rows = hostQuery ? hostsData.filter((h) => hostMatches(h, hostQuery)) : hostsData;
+  let rows = hostsData;
+  if (tagFilter) rows = rows.filter((h) => (h.tags || []).includes(tagFilter));
+  if (hostQuery) rows = rows.filter((h) => hostMatches(h, hostQuery));
   if (hostSort.key && sortKeyFns[hostSort.key]) {
     const f = sortKeyFns[hostSort.key], d = hostSort.dir;
     rows = [...rows].sort((a, b) => {
@@ -375,7 +415,7 @@ function renderHosts(hosts) {
   }
   $("hosts-body").innerHTML = rows.map((h) => `
     <tr data-id="${esc(h.stable_id)}">
-      <td><span class="dev-icon" style="${iconStyle(h.icon_url, "var(--accent)")}"></span>${esc(h.display_name || "(unnamed)")}</td>
+      <td><span class="dev-icon" style="${iconStyle(h.icon_url, "var(--accent)")}"></span>${esc(h.display_name || "(unnamed)")}${(h.tags || []).length ? `<div class="tags">${tagChips(h.tags, true)}</div>` : ""}</td>
       <td>${esc(h.model || h.device_class || "—")}</td>
       <td class="conf">${confBadge(h.device_class || h.os_guess ? h.confidence : 0)}</td>
       <td class="mono">${(h.ips || []).map(esc).join(", ") || "—"}</td>
@@ -383,11 +423,51 @@ function renderHosts(hosts) {
       <td>${expectedPill(h.is_expected)}</td>
       <td>${fmtTime(h.last_seen)}</td>
     </tr>`).join("");
-  for (const tr of $("hosts-body").querySelectorAll("tr")) tr.onclick = () => openHost(tr.dataset.id);
+  for (const tr of $("hosts-body").querySelectorAll("tr")) {
+    tr.onclick = (e) => { if (!e.target.closest(".tag-chip")) openHost(tr.dataset.id); };
+  }
+  for (const chip of $("hosts-body").querySelectorAll(".tag-chip.click")) {
+    chip.onclick = () => { tagFilter = chip.dataset.tag; renderHosts(); renderTagFilterBar(); };
+  }
   for (const th of document.querySelectorAll("#hosts thead th[data-sort]")) {
     th.setAttribute("aria-sort", th.dataset.sort === hostSort.key ? (hostSort.dir === 1 ? "ascending" : "descending") : "none");
   }
+  renderTagFilterBar();
 }
+
+// renderTagFilterBar shows the active tag filter (with a clear button) + saved views.
+function renderTagFilterBar() {
+  const bar = $("inv-filterbar");
+  if (!bar) return;
+  const pill = tagFilter ? `<span class="tag-chip" style="--tc:${tagColor(tagFilter)}">tag: ${esc(tagFilter)} <a class="clear" id="clear-tag">✕</a></span>` : "";
+  const views = savedViews();
+  const opts = `<option value="">Saved views…</option>` + views.map((v, i) => `<option value="${i}">${esc(v.name)}</option>`).join("");
+  bar.innerHTML = `${pill}<span class="grow"></span>
+    <select id="view-select" class="view-select">${opts}</select>
+    <button class="ghost" id="view-save">Save view</button>${views.length ? `<button class="ghost" id="view-del">Delete</button>` : ""}`;
+  if ($("clear-tag")) $("clear-tag").onclick = () => { tagFilter = ""; renderHosts(); };
+  $("view-select").onchange = (e) => { if (e.target.value !== "") applyView(views[+e.target.value]); };
+  $("view-save").onclick = saveCurrentView;
+  if ($("view-del")) $("view-del").onclick = () => { const s = $("view-select"); if (s.value !== "") deleteView(+s.value); };
+}
+
+// ── saved views (per-browser) ────────────────────────────────────────────────
+function savedViews() { try { return JSON.parse(localStorage.getItem("tessera.views") || "[]"); } catch { return []; } }
+function setViews(v) { localStorage.setItem("tessera.views", JSON.stringify(v)); }
+function saveCurrentView() {
+  const name = prompt("Save current filter as view — name:");
+  if (!name) return;
+  const v = savedViews();
+  v.push({ name: name.trim(), q: hostQuery, tag: tagFilter, sortKey: hostSort.key, sortDir: hostSort.dir });
+  setViews(v); renderTagFilterBar(); toast("View saved");
+}
+function applyView(v) {
+  hostQuery = v.q || ""; tagFilter = v.tag || "";
+  hostSort = { key: v.sortKey || null, dir: v.sortDir || 1 };
+  if ($("host-search")) $("host-search").value = hostQuery;
+  renderHosts();
+}
+function deleteView(i) { const v = savedViews(); v.splice(i, 1); setViews(v); renderTagFilterBar(); }
 
 // setupSortHeaders wires the inventory headers once: click toggles direction on
 // the active column, or switches to a new column (ascending first).
@@ -558,6 +638,7 @@ async function openHost(id) {
     <form class="annotate" id="annotate-form">
       <label>Display name</label><input type="text" id="an-name" value="${esc(h.display_name || "")}">
       <label>Device / Hardware</label><input type="text" id="an-class" value="${esc(h.device_class || "")}">
+      <label>Tags (comma-separated)</label><input type="text" id="an-tags" value="${esc((h.tags || []).join(", "))}" placeholder="e.g. iot, cameras, kids">
       <label>Notes</label><input type="text" id="an-notes" value="${esc(h.notes || "")}">
       <div class="row"><input type="checkbox" id="an-expected" ${h.is_expected ? "checked" : ""}><label for="an-expected" style="margin:0">Mark as expected</label></div>
       <div class="row"><input type="checkbox" id="an-ignored" ${h.ignored ? "checked" : ""}><label for="an-ignored" style="margin:0">Ignore (suppress from review)</label></div>
@@ -575,6 +656,7 @@ async function openHost(id) {
       ${h.model ? `<dt>Model</dt><dd>${esc(h.model)}</dd>` : ""}
       <dt>Operating System</dt><dd>${esc(h.os_guess || "—")} ${h.os_guess ? confBadge(h.confidence) : ""}</dd>
       ${h.firmware ? `<dt>Firmware</dt><dd class="mono">${esc(h.firmware)}</dd>` : ""}
+      ${(h.tags || []).length ? `<dt>Tags</dt><dd><div class="tags">${tagChips(h.tags, false)}</div></dd>` : ""}
       <dt>Expected</dt><dd>${expectedPill(h.is_expected)}</dd>
       <dt>First seen</dt><dd>${fmtTime(h.first_seen)}</dd>
       <dt>Last seen</dt><dd>${fmtTime(h.last_seen)}</dd>
@@ -590,7 +672,7 @@ async function openHost(id) {
   if (me.is_admin) {
     $("annotate-form").onsubmit = async (e) => {
       e.preventDefault();
-      await post("/api/host/annotate", { stable_id: h.stable_id, display_name: $("an-name").value, device_class: $("an-class").value, notes: $("an-notes").value, is_expected: $("an-expected").checked, ignored: $("an-ignored").checked });
+      await post("/api/host/annotate", { stable_id: h.stable_id, display_name: $("an-name").value, device_class: $("an-class").value, notes: $("an-notes").value, is_expected: $("an-expected").checked, ignored: $("an-ignored").checked, tags: splitList($("an-tags").value) });
       toast("Saved"); closePanels(); refresh();
     };
     for (const tile of $("icon-picker").querySelectorAll(".icon-tile")) {
@@ -868,7 +950,7 @@ $("detail-close").onclick = closePanels;
 $("overlay").onclick = closePanels;
 
 // ── full-page views (router) ─────────────────────────────────────────────────
-const VIEWS = ["dashboard", "topology", "observations", "security", "settings"];
+const VIEWS = ["dashboard", "topology", "ports", "observations", "security", "settings"];
 function showView(name) {
   if (!VIEWS.includes(name)) name = "dashboard";
   closePanels();
@@ -880,6 +962,7 @@ function showView(name) {
   else if (name === "settings") openSettings();
   else if (name === "observations") renderObservations(true);
   else if (name === "security") renderSecurity();
+  else if (name === "ports") renderPortmap();
 }
 
 async function init() {

@@ -21,9 +21,10 @@ type annotateRequest struct {
 	StableID    string  `json:"stable_id"`
 	DisplayName *string `json:"display_name,omitempty"`
 	DeviceClass *string `json:"device_class,omitempty"`
-	IsExpected  *bool   `json:"is_expected,omitempty"`
-	Ignored     *bool   `json:"ignored,omitempty"`
-	Notes       *string `json:"notes,omitempty"`
+	IsExpected  *bool     `json:"is_expected,omitempty"`
+	Ignored     *bool     `json:"ignored,omitempty"`
+	Tags        *[]string `json:"tags,omitempty"`
+	Notes       *string   `json:"notes,omitempty"`
 	Icon        *string `json:"icon,omitempty"` // icon id; "" reverts to auto (§M12)
 }
 
@@ -72,6 +73,20 @@ func (s *Server) handleAnnotate(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Ignored != nil {
 		if !rec(observation.AttrIgnored, boolString(*req.Ignored)) {
+			return
+		}
+		wrote = true
+	}
+	if req.Tags != nil {
+		// Normalize: trim, drop empties and commas (the storage delimiter).
+		clean := make([]string, 0, len(*req.Tags))
+		for _, t := range *req.Tags {
+			t = strings.ReplaceAll(strings.TrimSpace(t), ",", " ")
+			if t != "" {
+				clean = append(clean, t)
+			}
+		}
+		if !rec(observation.AttrTags, strings.Join(clean, ",")) {
 			return
 		}
 		wrote = true

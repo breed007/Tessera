@@ -38,6 +38,27 @@ var unifiModelsJSON []byte
 // unifiModels maps a UniFi gear model code to its product name.
 var unifiModels = mustLoadFingerprints(unifiModelsJSON)
 
+// unifi_ports.json maps a product NAME (the resolved model, e.g. "USW Flex 2.5G
+// 5") to its physical port count — so the port-map can draw empty ports too.
+// Source: public.json unifi.network.numberOfPorts.
+
+//go:embed unifi_ports.json
+var unifiPortsJSON []byte
+
+var unifiPorts = mustLoadPorts()
+
+func mustLoadPorts() map[string]int {
+	m := map[string]int{}
+	_ = json.Unmarshal(unifiPortsJSON, &m)
+	return m
+}
+
+// PortCount returns the physical port count for a resolved UniFi model name.
+func PortCount(modelName string) (int, bool) {
+	n, ok := unifiPorts[strings.TrimSpace(modelName)]
+	return n, ok && n > 0
+}
+
 func mustLoadFingerprints(raw []byte) map[string]string {
 	m := map[string]string{}
 	// A malformed bundled file is a build/release problem, not a runtime one; an

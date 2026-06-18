@@ -15,6 +15,9 @@ func TestAuto(t *testing.T) {
 		// Specific products/roles (often in the model field) → the new icons.
 		{"Intel Corporate", "Linux", "computer", "Proxmox", "virtualization"},
 		{"", "", "router / gateway", "pfSense", "firewall"},
+		{"", "", "", "OPNsense", "firewall"},
+		{"Fortinet, Inc.", "", "", "FortiGate 60F", "firewall"},
+		{"eero inc.", "", "", "eero Pro 6", "access-point"},
 		{"", "", "computer", "Pi-hole", "adblock"},
 		{"", "", "", "AdGuard Home", "adblock"},
 		{"", "", "computer", "Splunk Enterprise", "analytics"},

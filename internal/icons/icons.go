@@ -22,7 +22,7 @@ func Auto(vendor, osGuess, deviceClass, model string) string {
 	switch {
 	case has(dm, "vmware", "esxi", "proxmox", "hypervisor", "qemu", "virtual machine"), has(v, "vmware"):
 		return "virtualization"
-	case has(dm, "pfsense", "opnsense"), has(d, "firewall"):
+	case has(dm, "pfsense", "opnsense", "fortinet", "fortigate"), has(v, "fortinet"), has(d, "firewall"):
 		return "firewall"
 	case has(dm, "pi-hole", "pihole", "adguard"):
 		return "adblock"
@@ -68,6 +68,8 @@ func Auto(vendor, osGuess, deviceClass, model string) string {
 		return "samsung"
 	case has(v, "google", "nest"):
 		return "google"
+	case has(v, "eero"):
+		return "access-point" // mesh Wi-Fi node
 	case has(v, "amazon"):
 		return "amazon"
 	case has(v, "tp-link", "tplink"):

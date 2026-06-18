@@ -63,10 +63,14 @@ func mapClients(clients []clientDTO) []emit {
 		if c.OUI != "" {
 			out = append(out, emit{observation.SubjectMAC, mac, observation.AttrOUIVendor, c.OUI, confOUI})
 		}
-		if c.SwMAC != "" && c.SwPort.Set {
+		switch {
+		case c.SwMAC != "" && c.SwPort.Set:
 			// value encoding consumed by the reconciler: "<switch-mac>/<port-idx>".
 			val := fmt.Sprintf("%s/%d", c.SwMAC, c.SwPort.Val)
 			out = append(out, emit{observation.SubjectMAC, mac, observation.AttrSwitchPort, val, confSwitchPort})
+		case c.APMac != "":
+			// Wireless client → nests under its access point.
+			out = append(out, emit{observation.SubjectMAC, mac, observation.AttrSwitchPort, c.APMac + "/wifi", confSwitchPort})
 		}
 		if c.VLAN.Set {
 			out = append(out, emit{observation.SubjectMAC, mac, observation.AttrVLANMembership, strconv.Itoa(c.VLAN.Val), confVLAN})
@@ -119,6 +123,15 @@ func mapDevices(devices []deviceDTO) []emit {
 		}
 		if v := strings.TrimSpace(d.Version); v != "" {
 			out = append(out, emit{observation.SubjectMAC, mac, observation.AttrFirmware, v, confFirmware})
+		}
+		// Uplink → the backbone topology (this device hangs off uplink_mac:port at
+		// the given speed). Encoded "<parent-mac>/<port>|<mbps>" (speed optional).
+		if up := strings.TrimSpace(d.Uplink.MAC); up != "" && d.Uplink.RemotePort.Set {
+			val := fmt.Sprintf("%s/%d", up, d.Uplink.RemotePort.Val)
+			if d.Uplink.Speed.Set && d.Uplink.Speed.Val > 0 {
+				val += fmt.Sprintf("|%d", d.Uplink.Speed.Val)
+			}
+			out = append(out, emit{observation.SubjectMAC, mac, observation.AttrSwitchPort, val, confSwitchPort})
 		}
 	}
 	return out

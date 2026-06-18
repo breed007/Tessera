@@ -61,7 +61,8 @@ $("setup-form").onsubmit = async (e) => {
 
 function renderUserbar() {
   const gear = me.is_admin ? `<a id="nav-settings">Settings</a>` : "";
-  $("userbar").innerHTML = `<b>${esc(me.username)}</b><span class="role">${esc(me.role)}</span>${gear}<a id="nav-logout">Logout</a>`;
+  $("userbar").innerHTML = `<b>${esc(me.username)}</b><span class="role">${esc(me.role)}</span><a id="nav-topology">Topology</a>${gear}<a id="nav-logout">Logout</a>`;
+  $("nav-topology").onclick = openTopology;
   if (me.is_admin) $("nav-settings").onclick = openSettings;
   $("nav-logout").onclick = async () => { await post("/api/logout"); location.reload(); };
 }
@@ -193,6 +194,36 @@ async function openSubnet(id) {
   for (const c of $("detail-body").querySelectorAll(".ipcell[data-id]:not([data-id=''])")) {
     c.style.cursor = "pointer";
     c.onclick = () => openHost(c.dataset.id);
+  }
+  openPanel("detail");
+}
+
+// openTopology renders the educated network tree: gateway → switches → APs →
+// clients, with the port + link speed each device connects through.
+async function openTopology() {
+  const d = await getJSON("/api/topology");
+  const nodeHTML = (n) => {
+    const link = (n.port || n.speed)
+      ? `<span class="topo-link">${n.port ? "port " + esc(n.port) : ""}${n.speed ? " · " + esc(n.speed) : ""}</span>` : "";
+    const kids = (n.children || []).length ? `<div class="topo-children">${n.children.map(nodeHTML).join("")}</div>` : "";
+    return `<div class="topo-node">
+      <div class="topo-row" data-id="${esc(n.stable_id)}">
+        <span class="dev-icon" style="${iconStyle(n.icon_url, "var(--accent)")}"></span>
+        <span class="topo-name">${esc(n.name)}</span>
+        ${n.sub ? `<span class="topo-sub">${esc(n.sub)}</span>` : ""}
+        ${link}
+      </div>${kids}</div>`;
+  };
+  const roots = (d.roots || []).map(nodeHTML).join("") || `<p class="muted-note">No topology yet — connect the UniFi controller (uplink + switch-port data builds the map).</p>`;
+  const unplaced = (d.unplaced || []).length
+    ? `<details class="topo-unplaced"><summary>Unplaced devices <span class="badge">${d.unplaced.length}</span></summary>${d.unplaced.map(nodeHTML).join("")}</details>`
+    : "";
+  $("detail-body").innerHTML = `<h2>Network topology</h2>
+    <p class="muted-note">Built from UniFi uplinks and switch-port data. Click a device to open it.</p>
+    <div class="topo">${roots}</div>${unplaced}`;
+  for (const row of $("detail-body").querySelectorAll(".topo-row[data-id]:not([data-id=''])")) {
+    row.style.cursor = "pointer";
+    row.onclick = () => openHost(row.dataset.id);
   }
   openPanel("detail");
 }

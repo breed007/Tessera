@@ -92,6 +92,7 @@ type Topology struct {
 	HostID     int64  `json:"host_id"`
 	Switch     string `json:"switch"`
 	SwitchPort string `json:"switch_port"`
+	Speed      string `json:"speed,omitempty"` // negotiated link speed in Mbps (uplinks)
 	VLAN       *int   `json:"vlan,omitempty"`
 	Source     string `json:"source"`
 }

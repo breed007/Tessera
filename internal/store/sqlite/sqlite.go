@@ -344,8 +344,8 @@ func (s *Store) ReplaceEntities(ctx context.Context, snap entity.Snapshot) error
 	}
 	for _, tp := range snap.Topology {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO topology
-			(id, host_id, switch, switch_port, vlan, source) VALUES (?, ?, ?, ?, ?, ?)`,
-			tp.ID, tp.HostID, tp.Switch, tp.SwitchPort, tp.VLAN, tp.Source); err != nil {
+			(id, host_id, switch, switch_port, speed, vlan, source) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			tp.ID, tp.HostID, tp.Switch, tp.SwitchPort, tp.Speed, tp.VLAN, tp.Source); err != nil {
 			return fmt.Errorf("sqlite: insert topology: %w", err)
 		}
 	}
@@ -501,7 +501,7 @@ func (s *Store) loadServices(ctx context.Context) ([]entity.Service, error) {
 }
 
 func (s *Store) loadTopology(ctx context.Context) ([]entity.Topology, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, host_id, switch, switch_port, vlan, source FROM topology ORDER BY id`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, host_id, switch, switch_port, speed, vlan, source FROM topology ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -510,7 +510,7 @@ func (s *Store) loadTopology(ctx context.Context) ([]entity.Topology, error) {
 	for rows.Next() {
 		var v entity.Topology
 		var vlan sql.NullInt64
-		if err := rows.Scan(&v.ID, &v.HostID, &v.Switch, &v.SwitchPort, &vlan, &v.Source); err != nil {
+		if err := rows.Scan(&v.ID, &v.HostID, &v.Switch, &v.SwitchPort, &v.Speed, &vlan, &v.Source); err != nil {
 			return nil, err
 		}
 		v.VLAN = nullIntPtr(vlan)

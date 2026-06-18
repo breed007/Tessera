@@ -56,6 +56,7 @@ type clientDTO struct {
 	Network    string  `json:"network"`
 	SwMAC      string  `json:"sw_mac"`
 	SwPort     flexInt `json:"sw_port"`
+	APMac      string  `json:"ap_mac"` // wireless clients: the AP they're associated with
 	VLAN       flexInt `json:"vlan"`
 	// Fingerprint: UniFi's own client identification. dev_id indexes the bundled
 	// device database (→ a model name); dev_id_override is the operator-corrected
@@ -74,6 +75,15 @@ type deviceDTO struct {
 	ModelDisplay string `json:"model_display"` // friendly name when the controller provides it, e.g. "USW Pro XG 10 PoE"
 	Type         string `json:"type"`          // usw | uap | ugw | udm | uxg ...
 	Version      string `json:"version"`        // running firmware, e.g. "8.7.5"
+	// Uplink: how this gear connects to its parent (→ the backbone topology).
+	Uplink uplinkDTO `json:"uplink"`
+}
+
+// uplinkDTO is the parent link of a UniFi device (from stat/device.uplink).
+type uplinkDTO struct {
+	MAC        string  `json:"uplink_mac"`         // parent device MAC
+	RemotePort flexInt `json:"uplink_remote_port"` // port on the parent
+	Speed      flexInt `json:"speed"`              // negotiated link speed, Mbps
 }
 
 // networkDTO is a subset of a configured network (rest/networkconf).

@@ -337,12 +337,14 @@ func (e *engine) applyBanner(h *hostAcc, obs observation.Observation) {
 }
 
 func (e *engine) applyTopology(h *hostAcc, obs observation.Observation) {
-	sw, port := splitSwitchPort(obs.Value)
+	sw, port, speed := splitSwitchPort(obs.Value)
 	key := h.stableID + "|" + sw + "|" + port
 	t := e.topo[key]
 	if t == nil {
-		t = &entity.Topology{Switch: sw, SwitchPort: port, Source: string(obs.Source)}
+		t = &entity.Topology{Switch: sw, SwitchPort: port, Speed: speed, Source: string(obs.Source)}
 		e.topo[key] = t
+	} else if speed != "" {
+		t.Speed = speed
 	}
 }
 
@@ -803,10 +805,13 @@ func parseProtoPort(v string) (proto string, port int, ok bool) {
 
 // splitSwitchPort splits a switch_port value "switchName/portIdx" on the last
 // slash. The M3.5 UniFi poller emits this encoding.
-func splitSwitchPort(v string) (sw, port string) {
+func splitSwitchPort(v string) (sw, port, speed string) {
 	v = strings.TrimSpace(v)
-	if i := strings.LastIndexByte(v, '/'); i >= 0 {
-		return v[:i], v[i+1:]
+	if i := strings.IndexByte(v, '|'); i >= 0 { // optional "|<mbps>" speed suffix
+		speed, v = v[i+1:], v[:i]
 	}
-	return v, ""
+	if i := strings.LastIndexByte(v, '/'); i >= 0 {
+		return v[:i], v[i+1:], speed
+	}
+	return v, "", speed
 }

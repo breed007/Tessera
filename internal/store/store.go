@@ -73,11 +73,22 @@ type ConflictStore interface {
 	DeleteResolution(ctx context.Context, subject, attribute string) error
 }
 
+// SecuritySuppressionStore persists operator acknowledgements of security
+// findings (accept-risk), with a note. Workflow state, kept separately from the
+// derived findings list and merged in at read time, keyed by (stable_id, proto,
+// port); a zero port suppresses a host-level finding.
+type SecuritySuppressionStore interface {
+	ListSecuritySuppressions(ctx context.Context) ([]entity.SecuritySuppression, error)
+	SetSecuritySuppression(ctx context.Context, s entity.SecuritySuppression) error
+	DeleteSecuritySuppression(ctx context.Context, stableID, proto string, port int) error
+}
+
 // Store is the full persistence surface handed to the app at startup.
 type Store interface {
 	ObservationLog
 	EntityStore
 	ConflictStore
+	SecuritySuppressionStore
 	Migrate(ctx context.Context) error
 	Close() error
 }

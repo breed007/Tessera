@@ -677,6 +677,41 @@ func (s *Store) DeleteResolution(ctx context.Context, subject, attribute string)
 	return err
 }
 
+func (s *Store) ListSecuritySuppressions(ctx context.Context) ([]entity.SecuritySuppression, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT stable_id, proto, port, note, suppressed_at, suppressed_by
+		FROM security_suppressions ORDER BY suppressed_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []entity.SecuritySuppression
+	for rows.Next() {
+		var sp entity.SecuritySuppression
+		var at string
+		if err := rows.Scan(&sp.StableID, &sp.Proto, &sp.Port, &sp.Note, &at, &sp.SuppressedBy); err != nil {
+			return nil, err
+		}
+		sp.SuppressedAt, _ = parseTime(at)
+		out = append(out, sp)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) SetSecuritySuppression(ctx context.Context, sp entity.SecuritySuppression) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO security_suppressions
+		(stable_id, proto, port, note, suppressed_at, suppressed_by)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(stable_id, proto, port) DO UPDATE SET
+			note=excluded.note, suppressed_at=excluded.suppressed_at, suppressed_by=excluded.suppressed_by`,
+		sp.StableID, sp.Proto, sp.Port, sp.Note, ft(sp.SuppressedAt), sp.SuppressedBy)
+	return err
+}
+
+func (s *Store) DeleteSecuritySuppression(ctx context.Context, stableID, proto string, port int) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM security_suppressions WHERE stable_id=? AND proto=? AND port=?`, stableID, proto, port)
+	return err
+}
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 func ft(t time.Time) string { return t.UTC().Format(rfc3339ms) }

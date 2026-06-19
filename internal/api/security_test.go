@@ -68,5 +68,34 @@ func TestSecurityFindings(t *testing.T) {
 	if !sawTelnet {
 		t.Errorf("telnet (high) finding missing: %+v", d.Findings)
 	}
+
+	// Suppress the telnet finding → it moves to Suppressed, high count drops to 0.
+	if r := authPost(t, ts.URL+"/api/security/suppress", map[string]any{
+		"stable_id": "mac:aa:bb:cc:00:00:01", "proto": "tcp", "port": 23, "note": "isolated VLAN",
+	}); r.StatusCode != 200 {
+		t.Fatalf("suppress → %d", r.StatusCode)
+	} else {
+		r.Body.Close()
+	}
+	d2 := getJSON[SecurityView](t, ts.URL+"/api/security")
+	if d2.High != 0 || d2.Medium != 1 {
+		t.Fatalf("after suppress: high=%d medium=%d, want 0/1: %+v", d2.High, d2.Medium, d2.Findings)
+	}
+	if len(d2.Suppressed) != 1 || d2.Suppressed[0].Port != 23 || d2.Suppressed[0].Note != "isolated VLAN" {
+		t.Fatalf("suppressed list wrong: %+v", d2.Suppressed)
+	}
+
+	// Restore it → back to an active finding.
+	if r := authPost(t, ts.URL+"/api/security/unsuppress", map[string]any{
+		"stable_id": "mac:aa:bb:cc:00:00:01", "proto": "tcp", "port": 23,
+	}); r.StatusCode != 200 {
+		t.Fatalf("unsuppress → %d", r.StatusCode)
+	} else {
+		r.Body.Close()
+	}
+	d3 := getJSON[SecurityView](t, ts.URL+"/api/security")
+	if d3.High != 1 || len(d3.Suppressed) != 0 {
+		t.Fatalf("after restore: high=%d suppressed=%d, want 1/0", d3.High, len(d3.Suppressed))
+	}
 }
 

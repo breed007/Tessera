@@ -128,6 +128,20 @@ type ConflictResolution struct {
 	ResolvedBy   string    `json:"resolved_by,omitempty"`
 }
 
+// SecuritySuppression is an operator's decision to acknowledge/accept a security
+// finding so it stops counting as active (and stops firing alerts), with an
+// optional note explaining why. Keyed by host + service; a zero port (proto "")
+// suppresses a host-level finding such as "large attack surface". Workflow state,
+// independent of the derived findings list.
+type SecuritySuppression struct {
+	StableID     string    `json:"stable_id"`
+	Proto        string    `json:"proto,omitempty"`
+	Port         int       `json:"port,omitempty"`
+	Note         string    `json:"note,omitempty"`
+	SuppressedAt time.Time `json:"suppressed_at"`
+	SuppressedBy string    `json:"suppressed_by,omitempty"`
+}
+
 // Snapshot is the full reconciled entity layer at a point in time. The
 // reconciler rebuilds it from the log and the store persists it atomically
 // (Reset + insert), which is exactly the §3.3 "reconstructable by replaying the

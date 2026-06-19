@@ -13,11 +13,15 @@ import (
 )
 
 type fakeStore struct {
-	snap entity.Snapshot
-	kv   map[string]string
+	snap  entity.Snapshot
+	kv    map[string]string
+	supps []entity.SecuritySuppression
 }
 
 func (f *fakeStore) LoadEntities(context.Context) (entity.Snapshot, error) { return f.snap, nil }
+func (f *fakeStore) ListSecuritySuppressions(context.Context) ([]entity.SecuritySuppression, error) {
+	return f.supps, nil
+}
 func (f *fakeStore) SettingGet(_ context.Context, k string) (string, bool, error) {
 	v, ok := f.kv[k]
 	return v, ok, nil
@@ -112,6 +116,38 @@ func TestEngineRiskyService(t *testing.T) {
 	defer mu.Unlock()
 	if len(got) != 1 || got[0].Type != TypeRiskyService || got[0].Subject != "mac:aa" {
 		t.Fatalf("after telnet appears, alerts = %+v, want one risky_service for mac:aa", got)
+	}
+}
+
+func TestEngineRiskyServiceSuppressed(t *testing.T) {
+	var mu sync.Mutex
+	var got []Event
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		got = append(got, Event{})
+		mu.Unlock()
+	}))
+	defer srv.Close()
+
+	// Telnet is present from the start but operator-suppressed → no alert ever.
+	fs := &fakeStore{kv: map[string]string{}, snap: entity.Snapshot{
+		Hosts:     []entity.Host{{ID: 1, StableID: "mac:aa", DisplayName: "nas"}},
+		Addresses: []entity.Address{{IP: "10.0.0.5", HostID: id(1), State: entity.StateActive}},
+		Services:  []entity.Service{{HostID: id(1), Proto: "tcp", Port: 443}},
+	}, supps: []entity.SecuritySuppression{{StableID: "mac:aa", Proto: "tcp", Port: 23}}}
+	cfg := Config{Enabled: true, Kind: "webhook", URL: srv.URL, RiskyService: true}
+	e := New(fs, cfg, nil)
+	if err := e.Process(context.Background()); err != nil { // baseline
+		t.Fatal(err)
+	}
+	fs.snap.Services = append(fs.snap.Services, entity.Service{HostID: id(1), Proto: "tcp", Port: 23})
+	if err := e.Process(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(got) != 0 {
+		t.Fatalf("suppressed telnet dispatched %d alerts, want 0", len(got))
 	}
 }
 

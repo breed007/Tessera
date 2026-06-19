@@ -78,6 +78,7 @@ type Store interface {
 	LoadEntities(ctx context.Context) (entity.Snapshot, error)
 	SettingGet(ctx context.Context, key string) (string, bool, error)
 	SettingSet(ctx context.Context, key, value string, isSecret bool) error
+	ListSecuritySuppressions(ctx context.Context) ([]entity.SecuritySuppression, error)
 }
 
 // Engine diffs snapshots and dispatches alerts.
@@ -119,6 +120,15 @@ func (e *Engine) Process(ctx context.Context) error {
 	prev, firstRun, err := e.loadState(ctx)
 	if err != nil {
 		return err
+	}
+	// Operator-suppressed (accepted-risk) findings don't fire risky-service alerts.
+	supps, err := e.store.ListSecuritySuppressions(ctx)
+	if err != nil {
+		return err
+	}
+	suppressed := map[string]bool{}
+	for _, sp := range supps {
+		suppressed[fmt.Sprintf("%s\x1f%s/%d", sp.StableID, sp.Proto, sp.Port)] = true
 	}
 
 	// Index addresses by host so we can compute online + primary IP.
@@ -206,6 +216,9 @@ func (e *Engine) Process(ctx context.Context) error {
 			continue
 		}
 		key := fmt.Sprintf("%s\x1f%s/%d", host.StableID, sv.Proto, sv.Port)
+		if suppressed[key] {
+			continue // operator accepted this risk — don't track or alert (unsuppress re-surfaces it)
+		}
 		cur.Risky[key] = true
 		if !firstRun && !prev.Risky[key] {
 			name := host.DisplayName

@@ -268,34 +268,61 @@ async function renderTopology() {
 }
 
 // renderSecurity renders the exposed-services / posture findings (full page),
-// grouped by severity. Each finding links to its host.
+// grouped by severity. Each finding links to its host; admins can suppress
+// (accept-risk) a finding with a note, which moves it to the suppressed list and
+// stops it firing alerts.
 async function renderSecurity() {
   const d = await getJSON("/api/security");
   const findings = d.findings || [];
+  const suppressed = d.suppressed || [];
+  const isAdmin = me && me.is_admin;
   const counts = `<div class="sec-counts">
     <span class="sev-pill high">${d.high} high</span>
     <span class="sev-pill medium">${d.medium} medium</span>
     <span class="sev-pill low">${d.low} low</span></div>`;
-  let body;
-  if (!findings.length) {
-    body = `<p class="muted-note">No exposed-service findings. (Findings come from the active prober's discovered open ports — set ports under Settings → Active prober and rescan.)</p>`;
-  } else {
-    body = findings.map((f) => `
-      <div class="sec-row" data-id="${esc(f.stable_id)}">
-        <span class="sev-pill ${esc(f.severity)}">${esc(f.severity)}</span>
-        <div class="sec-main">
-          <div><b>${esc(f.title)}</b>${f.port ? ` <span class="mono">${esc(f.proto)}/${f.port}</span>` : ""}</div>
-          <div class="sec-detail">${esc(f.detail)}</div>
-        </div>
-        <div class="sec-host"><span class="topo-name">${esc(f.host)}</span>${f.ip ? ` <span class="mono">${esc(f.ip)}</span>` : ""}</div>
-      </div>`).join("");
-  }
+  const row = (f, supp) => `
+    <div class="sec-row${supp ? " supp" : ""}" data-id="${esc(f.stable_id)}" data-proto="${esc(f.proto || "")}" data-port="${f.port || 0}">
+      <span class="sev-pill ${esc(f.severity)}">${esc(f.severity)}</span>
+      <div class="sec-main">
+        <div><b>${esc(f.title)}</b>${f.port ? ` <span class="mono">${esc(f.proto)}/${f.port}</span>` : ""}</div>
+        <div class="sec-detail">${esc(f.detail)}</div>
+        ${supp && f.note ? `<div class="sec-note">📝 ${esc(f.note)}</div>` : ""}
+        ${supp ? `<div class="sec-note muted-note">acknowledged${f.suppressed_by ? ` by ${esc(f.suppressed_by)}` : ""}</div>` : ""}
+      </div>
+      <div class="sec-host">
+        <div><span class="topo-name">${esc(f.host)}</span>${f.ip ? ` <span class="mono">${esc(f.ip)}</span>` : ""}</div>
+        ${isAdmin ? `<div class="sec-actions">${supp
+          ? `<button class="ghost sec-restore">↩ Restore</button>`
+          : `<button class="ghost sec-suppress">⊘ Suppress</button>`}</div>` : ""}
+      </div>
+    </div>`;
+  const body = findings.length
+    ? findings.map((f) => row(f, false)).join("")
+    : `<p class="muted-note">No active exposed-service findings. (Findings come from the active prober's discovered open ports — set ports under Settings → Active prober and rescan.)</p>`;
+  const suppBlock = suppressed.length
+    ? `<details class="sec-suppressed"><summary>Suppressed / acknowledged (${suppressed.length})</summary>${suppressed.map((f) => row(f, true)).join("")}</details>`
+    : "";
   $("security-body").innerHTML = `<h2>Security posture <span class="badge">${findings.length}</span></h2>
     <p class="muted-note">Reachable services worth reviewing — plaintext, remote-access, exposed databases, file sharing. These are things to confirm are intentional, not confirmed vulnerabilities.</p>
-    ${counts}${body}`;
-  for (const row of $("security-body").querySelectorAll(".sec-row[data-id]:not([data-id=''])")) {
-    row.style.cursor = "pointer";
-    row.onclick = () => openHost(row.dataset.id);
+    ${counts}${body}${suppBlock}`;
+  for (const r of $("security-body").querySelectorAll(".sec-row[data-id]:not([data-id=''])")) {
+    r.style.cursor = "pointer";
+    r.onclick = (e) => { if (!e.target.closest("button")) openHost(r.dataset.id); };
+  }
+  const fkey = (r) => ({ stable_id: r.dataset.id, proto: r.dataset.proto, port: +r.dataset.port });
+  for (const b of $("security-body").querySelectorAll(".sec-suppress")) {
+    b.onclick = async () => {
+      const note = prompt("Suppress this finding — note (optional, e.g. “intentional, firewalled off”):");
+      if (note === null) return; // cancelled
+      await post("/api/security/suppress", { ...fkey(b.closest(".sec-row")), note });
+      toast("Finding suppressed"); renderSecurity();
+    };
+  }
+  for (const b of $("security-body").querySelectorAll(".sec-restore")) {
+    b.onclick = async () => {
+      await post("/api/security/unsuppress", fkey(b.closest(".sec-row")));
+      toast("Finding restored"); renderSecurity();
+    };
   }
 }
 

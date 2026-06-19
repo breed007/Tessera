@@ -25,8 +25,9 @@ type SecFinding struct {
 	IP           string `json:"ip,omitempty"`
 	Proto        string `json:"proto,omitempty"`
 	Port         int    `json:"port,omitempty"`
-	Note         string `json:"note,omitempty"`          // operator note when suppressed
-	SuppressedBy string `json:"suppressed_by,omitempty"` // who acknowledged it
+	Note         string     `json:"note,omitempty"`          // operator note when suppressed
+	SuppressedBy string     `json:"suppressed_by,omitempty"` // who acknowledged it
+	ExpiresAt    *time.Time `json:"expires_at,omitempty"`    // nil = indefinite
 }
 
 // SecurityView is the Security page payload: active findings (sorted high→low) +
@@ -60,9 +61,15 @@ func (s *Server) handleSecurity(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	now := time.Now().UTC()
 	suppByKey := map[string]entity.SecuritySuppression{}
 	for _, sp := range supps {
-		suppByKey[suppressionKey(sp.StableID, sp.Proto, sp.Port)] = sp
+		if sp.Active(now) {
+			suppByKey[suppressionKey(sp.StableID, sp.Proto, sp.Port)] = sp
+			continue
+		}
+		// Expired — drop it so the finding resurfaces, and lazily purge the row.
+		_ = s.store.DeleteSecuritySuppression(ctx, sp.StableID, sp.Proto, sp.Port)
 	}
 
 	host := map[int64]entity.Host{}
@@ -115,7 +122,7 @@ func (s *Server) handleSecurity(w http.ResponseWriter, r *http.Request) {
 	out := SecurityView{Findings: []SecFinding{}, Suppressed: []SecFinding{}}
 	for _, f := range all {
 		if sp, ok := suppByKey[suppressionKey(f.StableID, f.Proto, f.Port)]; ok {
-			f.Note, f.SuppressedBy = sp.Note, sp.SuppressedBy
+			f.Note, f.SuppressedBy, f.ExpiresAt = sp.Note, sp.SuppressedBy, sp.ExpiresAt
 			out.Suppressed = append(out.Suppressed, f)
 			continue
 		}
@@ -152,12 +159,17 @@ func sortFindings(fs []SecFinding) {
 }
 
 // suppressRequest acknowledges (accepts the risk of) a security finding so it
-// stops counting as active and stops firing alerts, with an optional note.
+// stops counting as active and stops firing alerts, with an optional note. The
+// expiry is optional and mutually exclusive: ExpiresInDays > 0 suppresses for
+// that many days from now; otherwise ExpiresAt (RFC3339) sets an explicit
+// deadline; otherwise the suppression is indefinite.
 type suppressRequest struct {
-	StableID string `json:"stable_id"`
-	Proto    string `json:"proto"`
-	Port     int    `json:"port"`
-	Note     string `json:"note"`
+	StableID      string `json:"stable_id"`
+	Proto         string `json:"proto"`
+	Port          int    `json:"port"`
+	Note          string `json:"note"`
+	ExpiresInDays int    `json:"expires_in_days,omitempty"`
+	ExpiresAt     string `json:"expires_at,omitempty"`
 }
 
 func (s *Server) handleSuppressFinding(w http.ResponseWriter, r *http.Request) {
@@ -174,13 +186,33 @@ func (s *Server) handleSuppressFinding(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "stable_id is required")
 		return
 	}
+	now := time.Now().UTC()
+	var expires *time.Time
+	switch {
+	case req.ExpiresInDays > 0:
+		t := now.AddDate(0, 0, req.ExpiresInDays)
+		expires = &t
+	case strings.TrimSpace(req.ExpiresAt) != "":
+		t, err := time.Parse(time.RFC3339, strings.TrimSpace(req.ExpiresAt))
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "expires_at must be RFC3339")
+			return
+		}
+		if !t.After(now) {
+			writeErr(w, http.StatusBadRequest, "expires_at must be in the future")
+			return
+		}
+		t = t.UTC()
+		expires = &t
+	}
 	if err := s.store.SetSecuritySuppression(r.Context(), entity.SecuritySuppression{
 		StableID:     req.StableID,
 		Proto:        req.Proto,
 		Port:         req.Port,
 		Note:         strings.TrimSpace(req.Note),
-		SuppressedAt: time.Now().UTC(),
+		SuppressedAt: now,
 		SuppressedBy: who.username,
+		ExpiresAt:    expires,
 	}); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return

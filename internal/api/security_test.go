@@ -9,6 +9,7 @@ import (
 
 	"github.com/tessera/tessera/internal/account"
 	"github.com/tessera/tessera/internal/config"
+	"github.com/tessera/tessera/internal/entity"
 	"github.com/tessera/tessera/internal/observation"
 	"github.com/tessera/tessera/internal/reconcile"
 	"github.com/tessera/tessera/internal/secret"
@@ -96,6 +97,31 @@ func TestSecurityFindings(t *testing.T) {
 	d3 := getJSON[SecurityView](t, ts.URL+"/api/security")
 	if d3.High != 1 || len(d3.Suppressed) != 0 {
 		t.Fatalf("after restore: high=%d suppressed=%d, want 1/0", d3.High, len(d3.Suppressed))
+	}
+
+	// Timed suppression: 30 days → suppressed now, with an expiry set.
+	if r := authPost(t, ts.URL+"/api/security/suppress", map[string]any{
+		"stable_id": "mac:aa:bb:cc:00:00:01", "proto": "tcp", "port": 23, "expires_in_days": 30,
+	}); r.StatusCode != 200 {
+		t.Fatalf("timed suppress → %d", r.StatusCode)
+	} else {
+		r.Body.Close()
+	}
+	d4 := getJSON[SecurityView](t, ts.URL+"/api/security")
+	if d4.High != 0 || len(d4.Suppressed) != 1 || d4.Suppressed[0].ExpiresAt == nil {
+		t.Fatalf("timed suppress: high=%d suppressed=%d expiry=%v, want 0/1/non-nil", d4.High, len(d4.Suppressed), d4.Suppressed[0].ExpiresAt)
+	}
+
+	// An already-expired suppression must be ignored (finding resurfaces).
+	past := time.Now().UTC().Add(-time.Hour)
+	if err := st.SetSecuritySuppression(ctx, entity.SecuritySuppression{
+		StableID: "mac:aa:bb:cc:00:00:01", Proto: "tcp", Port: 23, ExpiresAt: &past,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	d5 := getJSON[SecurityView](t, ts.URL+"/api/security")
+	if d5.High != 1 || len(d5.Suppressed) != 0 {
+		t.Fatalf("expired suppress: high=%d suppressed=%d, want 1/0 (resurfaced)", d5.High, len(d5.Suppressed))
 	}
 }
 

@@ -16,6 +16,15 @@ const getJSON = (p) => api("GET", p);
 const post = (p, b) => api("POST", p, b ?? {});
 
 function fmtTime(t) { if (!t || t.startsWith("0001")) return "—"; return new Date(t).toLocaleString(); }
+// fmtExpiry describes a suppression's expiry for display: indefinite, or a date
+// with a days-remaining hint.
+function fmtExpiry(iso) {
+  if (!iso) return "no expiry";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "no expiry";
+  const days = Math.ceil((d.getTime() - Date.now()) / 86400000);
+  return `expires ${d.toLocaleDateString()}${days >= 0 ? ` (${days}d)` : ""}`;
+}
 
 let iconCache = null;
 async function loadIcons(force) { if (force || !iconCache) iconCache = await getJSON("/api/icons"); return iconCache; }
@@ -287,7 +296,7 @@ async function renderSecurity() {
         <div><b>${esc(f.title)}</b>${f.port ? ` <span class="mono">${esc(f.proto)}/${f.port}</span>` : ""}</div>
         <div class="sec-detail">${esc(f.detail)}</div>
         ${supp && f.note ? `<div class="sec-note">📝 ${esc(f.note)}</div>` : ""}
-        ${supp ? `<div class="sec-note muted-note">acknowledged${f.suppressed_by ? ` by ${esc(f.suppressed_by)}` : ""}</div>` : ""}
+        ${supp ? `<div class="sec-note muted-note">acknowledged${f.suppressed_by ? ` by ${esc(f.suppressed_by)}` : ""} · ${fmtExpiry(f.expires_at)}</div>` : ""}
       </div>
       <div class="sec-host">
         <div><span class="topo-name">${esc(f.host)}</span>${f.ip ? ` <span class="mono">${esc(f.ip)}</span>` : ""}</div>
@@ -312,9 +321,24 @@ async function renderSecurity() {
   const fkey = (r) => ({ stable_id: r.dataset.id, proto: r.dataset.proto, port: +r.dataset.port });
   for (const b of $("security-body").querySelectorAll(".sec-suppress")) {
     b.onclick = async () => {
-      const note = prompt("Suppress this finding — note (optional, e.g. “intentional, firewalled off”):");
+      const dur = prompt("Suppress for how long?\n• blank = indefinitely\n• a number = that many days (e.g. 30)\n• a date = until then (YYYY-MM-DD or YYYY-MM-DDTHH:MM)");
+      if (dur === null) return; // cancelled
+      const body = fkey(b.closest(".sec-row"));
+      const s = dur.trim();
+      if (s) {
+        if (/^\d+$/.test(s)) {
+          body.expires_in_days = +s;
+        } else {
+          const d = new Date(s);
+          if (isNaN(d.getTime())) { toast("Unrecognized duration — use days or a date"); return; }
+          if (d.getTime() <= Date.now()) { toast("Date must be in the future"); return; }
+          body.expires_at = d.toISOString();
+        }
+      }
+      const note = prompt("Note (optional, e.g. “intentional, firewalled off”):");
       if (note === null) return; // cancelled
-      await post("/api/security/suppress", { ...fkey(b.closest(".sec-row")), note });
+      body.note = note;
+      await post("/api/security/suppress", body);
       toast("Finding suppressed"); renderSecurity();
     };
   }

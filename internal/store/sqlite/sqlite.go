@@ -678,7 +678,7 @@ func (s *Store) DeleteResolution(ctx context.Context, subject, attribute string)
 }
 
 func (s *Store) ListSecuritySuppressions(ctx context.Context) ([]entity.SecuritySuppression, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT stable_id, proto, port, note, suppressed_at, suppressed_by
+	rows, err := s.db.QueryContext(ctx, `SELECT stable_id, proto, port, note, suppressed_at, suppressed_by, expires_at
 		FROM security_suppressions ORDER BY suppressed_at DESC`)
 	if err != nil {
 		return nil, err
@@ -687,23 +687,33 @@ func (s *Store) ListSecuritySuppressions(ctx context.Context) ([]entity.Security
 	var out []entity.SecuritySuppression
 	for rows.Next() {
 		var sp entity.SecuritySuppression
-		var at string
-		if err := rows.Scan(&sp.StableID, &sp.Proto, &sp.Port, &sp.Note, &at, &sp.SuppressedBy); err != nil {
+		var at, exp string
+		if err := rows.Scan(&sp.StableID, &sp.Proto, &sp.Port, &sp.Note, &at, &sp.SuppressedBy, &exp); err != nil {
 			return nil, err
 		}
 		sp.SuppressedAt, _ = parseTime(at)
+		if exp != "" {
+			if t, err := parseTime(exp); err == nil {
+				sp.ExpiresAt = &t
+			}
+		}
 		out = append(out, sp)
 	}
 	return out, rows.Err()
 }
 
 func (s *Store) SetSecuritySuppression(ctx context.Context, sp entity.SecuritySuppression) error {
+	exp := ""
+	if sp.ExpiresAt != nil {
+		exp = ft(*sp.ExpiresAt)
+	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO security_suppressions
-		(stable_id, proto, port, note, suppressed_at, suppressed_by)
-		VALUES (?, ?, ?, ?, ?, ?)
+		(stable_id, proto, port, note, suppressed_at, suppressed_by, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(stable_id, proto, port) DO UPDATE SET
-			note=excluded.note, suppressed_at=excluded.suppressed_at, suppressed_by=excluded.suppressed_by`,
-		sp.StableID, sp.Proto, sp.Port, sp.Note, ft(sp.SuppressedAt), sp.SuppressedBy)
+			note=excluded.note, suppressed_at=excluded.suppressed_at, suppressed_by=excluded.suppressed_by,
+			expires_at=excluded.expires_at`,
+		sp.StableID, sp.Proto, sp.Port, sp.Note, ft(sp.SuppressedAt), sp.SuppressedBy, exp)
 	return err
 }
 

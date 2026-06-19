@@ -134,12 +134,19 @@ type ConflictResolution struct {
 // suppresses a host-level finding such as "large attack surface". Workflow state,
 // independent of the derived findings list.
 type SecuritySuppression struct {
-	StableID     string    `json:"stable_id"`
-	Proto        string    `json:"proto,omitempty"`
-	Port         int       `json:"port,omitempty"`
-	Note         string    `json:"note,omitempty"`
-	SuppressedAt time.Time `json:"suppressed_at"`
-	SuppressedBy string    `json:"suppressed_by,omitempty"`
+	StableID     string     `json:"stable_id"`
+	Proto        string     `json:"proto,omitempty"`
+	Port         int        `json:"port,omitempty"`
+	Note         string     `json:"note,omitempty"`
+	SuppressedAt time.Time  `json:"suppressed_at"`
+	SuppressedBy string     `json:"suppressed_by,omitempty"`
+	ExpiresAt    *time.Time `json:"expires_at,omitempty"` // nil = indefinite
+}
+
+// Active reports whether the suppression is still in effect at the given time
+// (indefinite suppressions are always active).
+func (s SecuritySuppression) Active(now time.Time) bool {
+	return s.ExpiresAt == nil || now.Before(*s.ExpiresAt)
 }
 
 // Snapshot is the full reconciled entity layer at a point in time. The

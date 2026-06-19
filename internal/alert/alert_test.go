@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/tessera/tessera/internal/entity"
 )
@@ -148,6 +149,39 @@ func TestEngineRiskyServiceSuppressed(t *testing.T) {
 	defer mu.Unlock()
 	if len(got) != 0 {
 		t.Fatalf("suppressed telnet dispatched %d alerts, want 0", len(got))
+	}
+}
+
+func TestEngineRiskyServiceSuppressionExpired(t *testing.T) {
+	var mu sync.Mutex
+	var got []Event
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		got = append(got, Event{})
+		mu.Unlock()
+	}))
+	defer srv.Close()
+
+	// Suppression exists but expired an hour ago → telnet must still alert.
+	past := time.Now().UTC().Add(-time.Hour)
+	fs := &fakeStore{kv: map[string]string{}, snap: entity.Snapshot{
+		Hosts:     []entity.Host{{ID: 1, StableID: "mac:aa", DisplayName: "nas"}},
+		Addresses: []entity.Address{{IP: "10.0.0.5", HostID: id(1), State: entity.StateActive}},
+		Services:  []entity.Service{{HostID: id(1), Proto: "tcp", Port: 443}},
+	}, supps: []entity.SecuritySuppression{{StableID: "mac:aa", Proto: "tcp", Port: 23, ExpiresAt: &past}}}
+	cfg := Config{Enabled: true, Kind: "webhook", URL: srv.URL, RiskyService: true}
+	e := New(fs, cfg, nil)
+	if err := e.Process(context.Background()); err != nil { // baseline
+		t.Fatal(err)
+	}
+	fs.snap.Services = append(fs.snap.Services, entity.Service{HostID: id(1), Proto: "tcp", Port: 23})
+	if err := e.Process(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(got) != 1 {
+		t.Fatalf("expired suppression dispatched %d alerts, want 1", len(got))
 	}
 }
 

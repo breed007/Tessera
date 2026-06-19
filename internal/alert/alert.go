@@ -126,9 +126,12 @@ func (e *Engine) Process(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	now := time.Now().UTC()
 	suppressed := map[string]bool{}
 	for _, sp := range supps {
-		suppressed[fmt.Sprintf("%s\x1f%s/%d", sp.StableID, sp.Proto, sp.Port)] = true
+		if sp.Active(now) { // expired suppressions don't apply (the finding re-alerts)
+			suppressed[fmt.Sprintf("%s\x1f%s/%d", sp.StableID, sp.Proto, sp.Port)] = true
+		}
 	}
 
 	// Index addresses by host so we can compute online + primary IP.

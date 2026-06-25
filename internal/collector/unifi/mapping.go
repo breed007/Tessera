@@ -35,6 +35,7 @@ const (
 	confSubnet      = 95
 	confFirmware    = 90 // first-party fact straight from the controller
 	confUniFiModel  = 85 // controller-reported gear model (mDNS self-report still outranks it)
+	confDHCP        = 90 // DHCP lease class straight from the controller
 	// OS derived from a fingerprinted model name — a notch below the model itself,
 	// which is the directly-reported fact.
 	confFingerprintOS = 70
@@ -56,6 +57,17 @@ func mapClients(clients []clientDTO) []emit {
 		}
 		if ip != "" {
 			out = append(out, emit{observation.SubjectMAC, mac, observation.AttrIPBinding, ip, confBinding})
+			// The controller knows whether this IP is a static reservation or a
+			// dynamic lease — surface it on the address.
+			styp := observation.SubjectIPv4
+			if strings.Contains(ip, ":") {
+				styp = observation.SubjectIPv6
+			}
+			class := "dynamic"
+			if c.UseFixedIP {
+				class = "reserved"
+			}
+			out = append(out, emit{styp, ip, observation.AttrDHCPLease, class, confDHCP})
 		}
 		if name := firstNonEmpty(c.Name, c.Hostname); name != "" {
 			out = append(out, emit{observation.SubjectMAC, mac, observation.AttrHostname, name, confHostname})

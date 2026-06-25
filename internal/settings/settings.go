@@ -54,6 +54,10 @@ type Editable struct {
 
 	SensorEnabled bool `json:"sensor_enabled"`
 
+	// DHCP lease ingestion (dnsmasq-family lease files).
+	DHCPEnabled    bool     `json:"dhcp_enabled"`
+	DHCPLeaseFiles []string `json:"dhcp_lease_files"`
+
 	// Auto-prune dormant devices (off by default; days default 30).
 	ForgetDormantEnabled bool `json:"forget_dormant_enabled"`
 	ForgetDormantDays    int  `json:"forget_dormant_days"`
@@ -214,6 +218,8 @@ func applyEditable(c *config.Config, e Editable) {
 	c.ActiveProbe.Interface = e.ActiveProbeInterface
 	c.ActiveProbe.SNMPCommunities = e.SNMPCommunities
 	c.Sensor.Enabled = e.SensorEnabled
+	c.DHCP.Enabled = e.DHCPEnabled
+	c.DHCP.LeaseFiles = e.DHCPLeaseFiles
 	c.Reconcile.ForgetDormantEnabled = e.ForgetDormantEnabled
 	if e.ForgetDormantDays > 0 {
 		c.Reconcile.ForgetDormantDays = e.ForgetDormantDays
@@ -262,6 +268,9 @@ func extractEditable(c config.Config) Editable {
 		AlertConflict:        c.Alerts.Conflict,
 		AlertRiskyService:    c.Alerts.RiskyService,
 		SensorEnabled:        c.Sensor.Enabled,
+
+		DHCPEnabled:    c.DHCP.Enabled,
+		DHCPLeaseFiles: c.DHCP.LeaseFiles,
 
 		ForgetDormantEnabled: c.Reconcile.ForgetDormantEnabled,
 		ForgetDormantDays:    c.Reconcile.ForgetDormantDays,

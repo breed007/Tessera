@@ -62,6 +62,19 @@ func TestMapClients(t *testing.T) {
 	}
 }
 
+func TestMapClientsDHCP(t *testing.T) {
+	es := mapClients([]clientDTO{
+		{MAC: "aa:aa:aa:aa:aa:aa", IP: "10.0.0.5"},                                        // dynamic
+		{MAC: "bb:bb:bb:bb:bb:bb", IP: "10.0.0.6", UseFixedIP: true, FixedIP: "10.0.0.6"}, // reserved
+	})
+	if e := findEmit(es, observation.AttrDHCPLease, "10.0.0.5"); e == nil || e.value != "dynamic" {
+		t.Errorf("dynamic lease emit = %+v, want dynamic", e)
+	}
+	if e := findEmit(es, observation.AttrDHCPLease, "10.0.0.6"); e == nil || e.value != "reserved" {
+		t.Errorf("reserved lease emit = %+v, want reserved", e)
+	}
+}
+
 const fingerprintClientsJSON = `{"meta":{"rc":"ok"},"data":[
   {"mac":"aa:bb:cc:00:00:14","ip":"10.0.0.121","name":"Apple TV 4K Den","oui":"Apple","dev_id":14},
   {"mac":"11:22:33:44:55:66","ip":"192.168.10.50","dev_id":4,"dev_id_override":7},

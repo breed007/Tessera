@@ -81,6 +81,7 @@ type addrAcc struct {
 	hostKey   string
 	mac       string
 	state     *resolver // for manual "reserved"
+	dhcp      *resolver // DHCP lease class (reserved/dynamic) from the DHCP server
 	newest    time.Time // newest supporting observation (drives aging)
 	firstSeen time.Time
 	lastSeen  time.Time
@@ -232,6 +233,10 @@ func (e *engine) applyIP(h *hostAcc, obs observation.Observation) {
 		// Manual reservation of an address (§3.2); folded by ageState.
 		a.state.add(e.score(obs))
 		e.support(a, obs.ObservedAt)
+	case observation.AttrDHCPLease:
+		// DHCP server's lease class (reserved/dynamic); keeps the address alive too.
+		a.dhcp.add(e.score(obs))
+		e.support(a, obs.ObservedAt)
 	case observation.AttrOpenPort:
 		e.support(a, obs.ObservedAt)
 		e.applyService(h, obs)
@@ -276,7 +281,7 @@ func (e *engine) iface(mac, hostKey string) *ifaceAcc {
 func (e *engine) addr(ip string, ver int, hostKey string) *addrAcc {
 	a := e.addrs[ip]
 	if a == nil {
-		a = &addrAcc{ip: ip, version: ver, hostKey: hostKey, state: &resolver{}}
+		a = &addrAcc{ip: ip, version: ver, hostKey: hostKey, state: &resolver{}, dhcp: &resolver{}}
 		e.addrs[ip] = a
 	}
 	// Re-home the address to the latest resolved host key (current owner).
@@ -566,6 +571,9 @@ func (e *engine) snapshot() (entity.Snapshot, []conflictRec) {
 			State:     e.ageState(a),
 			FirstSeen: a.firstSeen,
 			LastSeen:  a.lastSeen,
+		}
+		if w, ok := a.dhcp.winner(); ok {
+			addr.DHCP = w.obs.Value
 		}
 		if id, ok := hostID[a.hostKey]; ok {
 			addr.HostID = &id

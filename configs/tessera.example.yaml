@@ -110,6 +110,14 @@ fingerbank:
   # db_path: /var/lib/tessera/fingerbank.db   # required for mode: local_db
   # api key via env: TESSERA_FINGERBANK_KEY  (required for mode: api)
 
+dhcp:
+  # Ingest DHCP server lease tables (dnsmasq-family lease files: dnsmasq, Pi-hole,
+  # OpenWrt). Sharpens IP<->MAC<->hostname and marks addresses reserved vs dynamic.
+  # UniFi reservations are ingested automatically by the UniFi poller.
+  enabled: false
+  lease_files: []                      # e.g. ["/var/lib/misc/dnsmasq.leases"]
+  interval: 5m                         # re-read cadence
+
 reconcile:
   stale_after: 24h
   free_after: 168h

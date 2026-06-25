@@ -15,6 +15,7 @@ type Config struct {
 	Discovery   Discovery   `yaml:"discovery"`
 	UniFi       UniFi       `yaml:"unifi"`
 	Fingerbank  Fingerbank  `yaml:"fingerbank"`
+	DHCP        DHCP        `yaml:"dhcp"`
 	Reconcile   Reconcile   `yaml:"reconcile"`
 	Storage     Storage     `yaml:"storage"`
 	API         API         `yaml:"api"`
@@ -171,6 +172,15 @@ type Reconcile struct {
 	ForgetDormantDays    int  `yaml:"forget_dormant_days"`
 }
 
+// DHCP configures ingestion of DHCP server lease tables (dnsmasq-family lease
+// files for now). Off by default; lease files are read from the Tessera host's
+// filesystem (no auth).
+type DHCP struct {
+	Enabled    bool          `yaml:"enabled"`
+	LeaseFiles []string      `yaml:"lease_files"` // dnsmasq/Pi-hole/OpenWrt lease file paths
+	Interval   time.Duration `yaml:"interval"`    // re-read cadence; 0 = default 5m
+}
+
 // Storage configures the persistence driver (§5).
 type Storage struct {
 	Driver string `yaml:"driver"` // sqlite (postgres swappable later)
@@ -224,6 +234,10 @@ func Default() Config {
 			Rate:          FingerbankRate{MaxPerHour: 250, Burst: 10},
 			CacheTTL:      720 * time.Hour,
 			SubmitUnknown: false,
+		},
+		DHCP: DHCP{
+			Enabled:  false,
+			Interval: 5 * time.Minute,
 		},
 		Reconcile: Reconcile{
 			StaleAfter:           24 * time.Hour,

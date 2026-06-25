@@ -71,6 +71,7 @@ type Address struct {
 	MAC       string       `json:"mac,omitempty"`
 	HostID    *int64       `json:"host_id,omitempty"`
 	State     AddressState `json:"state"`
+	DHCP      string       `json:"dhcp,omitempty"` // "reserved" (static mapping) | "dynamic", from the DHCP server
 	FirstSeen time.Time    `json:"first_seen"`
 	LastSeen  time.Time    `json:"last_seen"`
 }

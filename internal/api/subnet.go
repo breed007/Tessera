@@ -14,6 +14,7 @@ import (
 type AddrCell struct {
 	IP       string `json:"ip"`
 	State    string `json:"state"` // active | stale | reserved | free
+	DHCP     string `json:"dhcp,omitempty"` // reserved | dynamic (DHCP server lease class)
 	Host     string `json:"host,omitempty"`
 	StableID string `json:"stable_id,omitempty"`
 }
@@ -71,6 +72,7 @@ func (s *Server) handleSubnet(w http.ResponseWriter, r *http.Request) {
 		c := AddrCell{IP: ip, State: "free"}
 		if !free {
 			c.State = string(a.State)
+			c.DHCP = a.DHCP
 			if a.HostID != nil {
 				c.Host, c.StableID = name[*a.HostID], stable[*a.HostID]
 			}

@@ -18,6 +18,7 @@ import (
 	"github.com/tessera/tessera/internal/api"
 	"github.com/tessera/tessera/internal/collector"
 	"github.com/tessera/tessera/internal/collector/active"
+	"github.com/tessera/tessera/internal/collector/dhcp"
 	"github.com/tessera/tessera/internal/collector/fingerbank"
 	"github.com/tessera/tessera/internal/collector/passive"
 	"github.com/tessera/tessera/internal/collector/unifi"
@@ -236,6 +237,12 @@ func buildCollectors(cfg config.Config, st store.Store, log *slog.Logger) ([]col
 		}
 		cs = append(cs, p)
 		log.Info("collector enabled", "name", p.Name(), "poll_interval", cfg.UniFi.PollInterval)
+	}
+
+	if cfg.DHCP.Enabled && len(cfg.DHCP.LeaseFiles) > 0 {
+		d := dhcp.New(dhcp.Config{Files: cfg.DHCP.LeaseFiles, Interval: cfg.DHCP.Interval})
+		cs = append(cs, d)
+		log.Info("collector enabled", "name", d.Name(), "lease_files", len(cfg.DHCP.LeaseFiles))
 	}
 
 	// Fingerbank is privacy-relevant and OFF by default (§7): only built when

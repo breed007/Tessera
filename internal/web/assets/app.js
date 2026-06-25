@@ -222,7 +222,7 @@ async function openSubnet(id) {
   const sn = d.subnet;
   const title = (sn.name ? esc(sn.name) + " · " : "") + esc(sn.cidr);
   const cells = (d.addresses || []).map((a) =>
-    `<span class="ipcell ${esc(a.state)}" data-id="${esc(a.stable_id || "")}" title="${esc(a.ip)}${a.host ? " · " + esc(a.host) : ""} (${esc(a.state)})"></span>`).join("");
+    `<span class="ipcell ${esc(a.state)}${a.dhcp === "reserved" ? " dhcp-res" : ""}" data-id="${esc(a.stable_id || "")}" title="${esc(a.ip)}${a.host ? " · " + esc(a.host) : ""} (${esc(a.state)}${a.dhcp ? " · DHCP " + esc(a.dhcp) : ""})"></span>`).join("");
   const map = d.full_map
     ? `<div class="ipgrid">${cells}</div>`
     : `<p class="muted-note">Range too large to map every address — showing the ${d.used} observed addresses.</p><div class="ipgrid">${cells}</div>`;
@@ -243,6 +243,7 @@ async function openSubnet(id) {
       <span><i class="ipcell stale"></i> stale</span>
       <span><i class="ipcell reserved"></i> reserved</span>
       <span><i class="ipcell free"></i> free</span>
+      <span><i class="ipcell active dhcp-res"></i> DHCP reservation</span>
     </div>
     <h3>Addresses</h3>${map}`;
   for (const c of $("detail-body").querySelectorAll(".ipcell[data-id]:not([data-id=''])")) {
@@ -703,7 +704,7 @@ async function openHost(id) {
   const h = d.host;
   const rows = (d.observations || []).map((o) => `<tr><td>${fmtTime(o.observed_at)}</td><td class="src">${esc(o.source)}</td><td>${esc(o.attribute)}</td><td>${esc(o.value)}</td><td class="conf">${o.confidence}</td></tr>`).join("");
   const ifaces = (d.interfaces || []).map((i) => `<div class="mono">${esc(i.mac)} ${i.is_randomized ? "· randomized" : ""} ${i.oui_vendor ? "· " + esc(i.oui_vendor) : ""}</div>`).join("") || "—";
-  const addrs = (d.addresses || []).map((a) => `<div class="mono">${esc(a.ip)} <span class="conf">[${esc(a.state)}]</span></div>`).join("") || "—";
+  const addrs = (d.addresses || []).map((a) => `<div class="mono">${esc(a.ip)} <span class="conf">[${esc(a.state)}]</span>${a.dhcp ? ` <span class="conf">DHCP ${esc(a.dhcp)}</span>` : ""}</div>`).join("") || "—";
   const svcs = (d.services || []).map((s) => `<div class="mono">${esc(s.proto)}/${s.port} ${s.banner ? "· " + esc(s.banner) : ""}</div>`).join("") || "—";
   const topo = (d.topology || []).map((t) => `<div class="mono">${esc(t.switch)} port ${esc(t.switch_port)}</div>`).join("") || "—";
   const changeLabel = { ip: "IP", firmware: "Firmware", model: "Model", os: "OS", device: "Device", hostname: "Hostname", service: "Service" };
@@ -885,6 +886,12 @@ async function openSettings() {
       ${txt("set-ap-iface", "Egress interface (blank = default route)", e.active_probe_interface)}
     </div>
 
+    <div class="settings-section"><h3>DHCP lease ingestion</h3>
+      ${chk("set-dhcp-en", "Read DHCP server lease files", e.dhcp_enabled)}
+      ${txt("set-dhcp-files", "Lease file paths (comma-separated)", (e.dhcp_lease_files || []).join(", "))}
+      <p class="muted-note">dnsmasq-family lease files (dnsmasq, Pi-hole, OpenWrt) readable on this host — e.g. <code>/var/lib/misc/dnsmasq.leases</code> or <code>/etc/pihole/dhcp.leases</code>. Leases sharpen IP↔MAC↔hostname and mark addresses reserved vs dynamic. UniFi reservations are ingested automatically by the UniFi poller. Applies after a restart.</p>
+    </div>
+
     <div class="settings-section"><h3>Discovery &amp; scanning techniques</h3>
       <p class="muted-note">Every technique is on by default — uncheck any you don't want. Passive techniques run only when the sensor is enabled; active techniques only when the active prober is. All scanning is read-only toward the network.</p>
       <h4 class="sub">Passive (capture)</h4>
@@ -1026,6 +1033,7 @@ function wireSettings(canSec) {
       alert_online: checked("set-al-on"), alert_ip_changed: checked("set-al-ip"), alert_conflict: checked("set-al-cf"),
       alert_risky_service: checked("set-al-risk"),
       forget_dormant_enabled: checked("set-prune-en"), forget_dormant_days: +val("set-prune-days") || 30,
+      dhcp_enabled: checked("set-dhcp-en"), dhcp_lease_files: splitList(val("set-dhcp-files")),
     };
     const secrets = {};
     if (canSec) {

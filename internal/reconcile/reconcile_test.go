@@ -27,6 +27,39 @@ func newStore(t *testing.T) store.Store {
 	return st
 }
 
+func TestDHCPLeaseFold(t *testing.T) {
+	st := newStore(t)
+	ctx := context.Background()
+	sink := observation.NewSink("seed", st)
+	rec := func(src observation.Source, sty observation.SubjectType, subj string, a observation.Attribute, v string, c int) {
+		if _, err := sink.Record(ctx, src, sty, subj, a, v, c, observation.At(testT0)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rec(observation.SourcePassiveARP, observation.SubjectMAC, "aa:bb:cc:00:00:01", observation.AttrIPBinding, "10.0.0.5", 95)
+	rec(observation.SourceUniFi, observation.SubjectIPv4, "10.0.0.5", observation.AttrDHCPLease, "reserved", 90)
+
+	if _, err := New(st, nil, testParams()).Rebuild(ctx); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := st.LoadEntities(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, a := range snap.Addresses {
+		if a.IP == "10.0.0.5" {
+			found = true
+			if a.DHCP != "reserved" {
+				t.Errorf("address DHCP = %q, want reserved", a.DHCP)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("address 10.0.0.5 not reconciled")
+	}
+}
+
 // testT0 anchors the synthetic timeline; testClock is "now" just after it so
 // addresses are active and confidences are barely decayed. A fixed clock makes
 // the whole reconciliation deterministic (aging and decay are time-relative).

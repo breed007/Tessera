@@ -422,9 +422,9 @@ func (s *Store) ReplaceEntities(ctx context.Context, snap entity.Snapshot) error
 	}
 	for _, a := range snap.Addresses {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO addresses
-			(id, ip, ip_version, subnet_id, mac, host_id, state, first_seen, last_seen)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			a.ID, a.IP, a.IPVersion, a.SubnetID, a.MAC, a.HostID, string(a.State),
+			(id, ip, ip_version, subnet_id, mac, host_id, state, dhcp, first_seen, last_seen)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			a.ID, a.IP, a.IPVersion, a.SubnetID, a.MAC, a.HostID, string(a.State), a.DHCP,
 			ft(a.FirstSeen), ft(a.LastSeen)); err != nil {
 			return fmt.Errorf("sqlite: insert address: %w", err)
 		}
@@ -554,7 +554,7 @@ func (s *Store) loadInterfaces(ctx context.Context) ([]entity.Interface, error) 
 }
 
 func (s *Store) loadAddresses(ctx context.Context) ([]entity.Address, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, ip, ip_version, subnet_id, mac, host_id, state, first_seen, last_seen FROM addresses ORDER BY id`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, ip, ip_version, subnet_id, mac, host_id, state, dhcp, first_seen, last_seen FROM addresses ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -563,13 +563,14 @@ func (s *Store) loadAddresses(ctx context.Context) ([]entity.Address, error) {
 	for rows.Next() {
 		var v entity.Address
 		var subnet, host sql.NullInt64
-		var st, fs, ls string
-		if err := rows.Scan(&v.ID, &v.IP, &v.IPVersion, &subnet, &v.MAC, &host, &st, &fs, &ls); err != nil {
+		var st, dhcp, fs, ls string
+		if err := rows.Scan(&v.ID, &v.IP, &v.IPVersion, &subnet, &v.MAC, &host, &st, &dhcp, &fs, &ls); err != nil {
 			return nil, err
 		}
 		v.SubnetID = nullInt64Ptr(subnet)
 		v.HostID = nullInt64Ptr(host)
 		v.State = entity.AddressState(st)
+		v.DHCP = dhcp
 		v.FirstSeen, _ = parseTime(fs)
 		v.LastSeen, _ = parseTime(ls)
 		out = append(out, v)

@@ -209,6 +209,21 @@ func TestTagsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestModelAnnotation(t *testing.T) {
+	ts := setup(t)
+	r := authPost(t, ts.URL+"/api/host/annotate", map[string]any{
+		"stable_id": "mac:b8:27:eb:11:22:33", "model": "Raspberry Pi 5",
+	})
+	if r.StatusCode != 200 {
+		t.Fatalf("annotate model → %d", r.StatusCode)
+	}
+	r.Body.Close()
+	detail := getJSON[HostDetail](t, ts.URL+"/api/host?id=mac:b8:27:eb:11:22:33")
+	if detail.Host.Model != "Raspberry Pi 5" {
+		t.Errorf("model annotation not reflected: %q", detail.Host.Model)
+	}
+}
+
 func TestIgnoreStatus(t *testing.T) {
 	ts := setup(t)
 	r := authPost(t, ts.URL+"/api/host/annotate", map[string]any{

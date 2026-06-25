@@ -21,6 +21,7 @@ type annotateRequest struct {
 	StableID    string  `json:"stable_id"`
 	DisplayName *string `json:"display_name,omitempty"`
 	DeviceClass *string `json:"device_class,omitempty"`
+	Model       *string   `json:"model,omitempty"`
 	IsExpected  *bool     `json:"is_expected,omitempty"`
 	Ignored     *bool     `json:"ignored,omitempty"`
 	Tags        *[]string `json:"tags,omitempty"`
@@ -61,6 +62,12 @@ func (s *Server) handleAnnotate(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.DeviceClass != nil {
 		if !rec(observation.AttrDeviceClass, *req.DeviceClass) {
+			return
+		}
+		wrote = true
+	}
+	if req.Model != nil {
+		if !rec(observation.AttrModel, *req.Model) {
 			return
 		}
 		wrote = true

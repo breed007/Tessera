@@ -725,6 +725,7 @@ async function openHost(id) {
     <form class="annotate" id="annotate-form">
       <label>Display name</label><input type="text" id="an-name" value="${esc(h.display_name || "")}">
       <label>Device / Hardware</label><input type="text" id="an-class" value="${esc(h.device_class || "")}">
+      <label>Model</label><input type="text" id="an-model" value="${esc(h.model || "")}" placeholder="e.g. UDM Pro, MacBook Pro 16&quot; M4">
       <label>Tags (comma-separated)</label><input type="text" id="an-tags" value="${esc((h.tags || []).join(", "))}" placeholder="e.g. iot, cameras, kids">
       <label>Notes</label><input type="text" id="an-notes" value="${esc(h.notes || "")}">
       <div class="row"><input type="checkbox" id="an-expected" ${h.is_expected ? "checked" : ""}><label for="an-expected" style="margin:0">Mark as expected</label></div>
@@ -773,7 +774,7 @@ async function openHost(id) {
   if (me.is_admin) {
     $("annotate-form").onsubmit = async (e) => {
       e.preventDefault();
-      await post("/api/host/annotate", { stable_id: h.stable_id, display_name: $("an-name").value, device_class: $("an-class").value, notes: $("an-notes").value, is_expected: $("an-expected").checked, ignored: $("an-ignored").checked, tags: splitList($("an-tags").value) });
+      await post("/api/host/annotate", { stable_id: h.stable_id, display_name: $("an-name").value, device_class: $("an-class").value, model: $("an-model").value, notes: $("an-notes").value, is_expected: $("an-expected").checked, ignored: $("an-ignored").checked, tags: splitList($("an-tags").value) });
       toast("Saved"); closePanels(); refresh();
     };
     for (const tile of $("icon-picker").querySelectorAll(".icon-tile")) {

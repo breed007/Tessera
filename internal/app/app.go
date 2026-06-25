@@ -22,6 +22,7 @@ import (
 	"github.com/tessera/tessera/internal/collector/passive"
 	"github.com/tessera/tessera/internal/collector/unifi"
 	"github.com/tessera/tessera/internal/config"
+	"github.com/tessera/tessera/internal/entity"
 	"github.com/tessera/tessera/internal/observation"
 	"github.com/tessera/tessera/internal/reconcile"
 	"github.com/tessera/tessera/internal/secret"
@@ -414,6 +415,7 @@ func (a *App) Run(ctx context.Context) error {
 	if _, err := a.recon.Rebuild(ctx); err != nil {
 		a.log.Error("initial reconcile failed", "err", err)
 	}
+	a.trackAvailability(ctx)
 	a.processAlerts(ctx)
 
 	ticker := time.NewTicker(reconcileInterval)
@@ -429,6 +431,7 @@ func (a *App) Run(ctx context.Context) error {
 			if _, err := a.recon.Rebuild(ctx); err != nil {
 				a.log.Error("reconcile failed", "err", err)
 			}
+			a.trackAvailability(ctx)
 			a.processAlerts(ctx)
 		}
 	}
@@ -461,6 +464,40 @@ func (a *App) compactLoop(ctx context.Context, interval time.Duration) {
 				a.log.Info("log compacted", "rows_removed", n)
 			}
 		}
+	}
+}
+
+// trackAvailability records an online/offline transition whenever a host's
+// reachability flips (online = at least one active address). Runs after every
+// reconcile; the table only grows on actual transitions. Uses the same
+// "active address" definition as the alerts and metrics, so they stay consistent.
+func (a *App) trackAvailability(ctx context.Context) {
+	snap, err := a.store.LoadEntities(ctx)
+	if err != nil {
+		a.log.Error("availability: load entities failed", "err", err)
+		return
+	}
+	last, err := a.store.LatestAvailability(ctx)
+	if err != nil {
+		a.log.Error("availability: latest lookup failed", "err", err)
+		return
+	}
+	online := map[int64]bool{}
+	for _, ad := range snap.Addresses {
+		if ad.HostID != nil && ad.State == entity.StateActive {
+			online[*ad.HostID] = true
+		}
+	}
+	now := time.Now().UTC()
+	var evs []entity.AvailabilityEvent
+	for _, h := range snap.Hosts {
+		cur := online[h.ID]
+		if prev, known := last[h.StableID]; !known || prev != cur {
+			evs = append(evs, entity.AvailabilityEvent{StableID: h.StableID, Online: cur, At: now})
+		}
+	}
+	if err := a.store.AppendAvailability(ctx, evs); err != nil {
+		a.log.Error("availability: append failed", "err", err)
 	}
 }
 

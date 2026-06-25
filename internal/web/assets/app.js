@@ -25,6 +25,11 @@ function fmtExpiry(iso) {
   const days = Math.ceil((d.getTime() - Date.now()) / 86400000);
   return `expires ${d.toLocaleDateString()}${days >= 0 ? ` (${days}d)` : ""}`;
 }
+// uptimePct formats an availability ratio (0–1, or -1/null = unknown) as a %.
+function uptimePct(r) {
+  if (r == null || r < 0) return "—";
+  return (r * 100).toFixed(r >= 0.999 ? 0 : 1) + "%";
+}
 
 let iconCache = null;
 async function loadIcons(force) { if (force || !iconCache) iconCache = await getJSON("/api/icons"); return iconCache; }
@@ -478,7 +483,7 @@ function renderHosts(hosts) {
   }
   $("hosts-body").innerHTML = rows.map((h) => `
     <tr data-id="${esc(h.stable_id)}">
-      <td><span class="dev-icon" style="${iconStyle(h.icon_url, "var(--accent)")}"></span>${esc(h.display_name || "(unnamed)")}${(h.tags || []).length ? `<div class="tags">${tagChips(h.tags, true)}</div>` : ""}</td>
+      <td><span class="online-dot ${h.online ? "on" : "off"}" title="${h.online ? "online" : "offline"}"></span><span class="dev-icon" style="${iconStyle(h.icon_url, "var(--accent)")}"></span>${esc(h.display_name || "(unnamed)")}${(h.tags || []).length ? `<div class="tags">${tagChips(h.tags, true)}</div>` : ""}</td>
       <td>${esc(h.model || h.device_class || "—")}</td>
       <td class="conf">${confBadge(h.device_class || h.os_guess ? h.confidence : 0)}</td>
       <td class="mono">${(h.ips || []).map(esc).join(", ") || "—"}</td>
@@ -726,6 +731,19 @@ async function openHost(id) {
       <button type="submit" class="primary">Save annotation</button>
     </form>` : "";
 
+  const av = d.availability;
+  const avBlock = av ? `
+    <h3>Availability</h3>
+    <div class="avail">
+      <div class="avail-now"><span class="pill ${av.online ? "yes" : "no"}">${av.online ? "online" : "offline"}</span> <span class="muted-note">since ${fmtTime(av.since)}</span></div>
+      <div class="uptime-row">
+        <span class="uptime">24h <b>${uptimePct(av.uptime_24h)}</b></span>
+        <span class="uptime">7d <b>${uptimePct(av.uptime_7d)}</b></span>
+        <span class="uptime">30d <b>${uptimePct(av.uptime_30d)}</b></span>
+      </div>
+      ${(av.events || []).length ? `<div class="avail-events">${av.events.map((e) => `<div class="change"><span class="change-time mono">${fmtTime(e.at)}</span> <span class="pill ${e.online ? "yes" : "no"}">${e.online ? "online" : "offline"}</span></div>`).join("")}</div>` : ""}
+    </div>` : "";
+
   const actions = me.is_admin ? `<div class="detail-actions"><button id="rescan-host" class="ghost" title="Actively probe this host's addresses now">↻ Rescan host</button><button id="forget-host" class="ghost danger" title="Delete all history and let it be rediscovered">⌫ Forget</button></div>` : "";
 
   $("detail-body").innerHTML = `
@@ -743,6 +761,7 @@ async function openHost(id) {
       <dt>Last seen</dt><dd>${fmtTime(h.last_seen)}</dd>
       <dt>Notes</dt><dd>${esc(h.notes || "—")}</dd>
     </dl>
+    ${avBlock}
     <h3>Interfaces</h3>${ifaces}<h3>Addresses</h3>${addrs}<h3>Services</h3>${svcs}<h3>Topology</h3>${topo}
     ${iconPicker}
     ${annotate}

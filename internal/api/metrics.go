@@ -11,7 +11,6 @@ import (
 
 	"github.com/tessera/tessera/internal/entity"
 	"github.com/tessera/tessera/internal/portrisk"
-	"github.com/tessera/tessera/internal/store"
 )
 
 // handleMetrics serves a Prometheus text-exposition snapshot of the current
@@ -135,7 +134,7 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Observation log size.
-	if _, total, err := s.store.QueryObservations(ctx, store.ObservationFilter{Limit: 1}); err == nil {
+	if total, err := s.store.CountObservations(ctx); err == nil {
 		p.help("tessera_observations_total", "Total observations in the append-only log.", "gauge")
 		p.line("tessera_observations_total", nil, float64(total))
 	}

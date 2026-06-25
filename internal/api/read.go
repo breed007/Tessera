@@ -19,6 +19,7 @@ type HostRow struct {
 	MACs    []string `json:"macs"`
 	IPs     []string `json:"ips"`
 	Vendor  string   `json:"vendor"`
+	Online  bool     `json:"online"` // has at least one active address
 	IconID  string   `json:"icon_id"`  // effective icon (manual or auto-assigned)
 	IconURL string   `json:"icon_url"` // resolved asset path
 }
@@ -35,6 +36,7 @@ type HostDetail struct {
 	Topology     []entity.Topology  `json:"topology"`
 	Observations []ObservationView  `json:"observations"`
 	Changes      []ChangeView       `json:"changes"`
+	Availability *AvailabilityView  `json:"availability,omitempty"`
 }
 
 // ChangeView is one meaningful change derived from the observation history — the
@@ -158,6 +160,9 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	detail.Changes = computeChanges(obs)
+	if evs, err := s.store.AvailabilityForHost(r.Context(), host.StableID); err == nil {
+		detail.Availability = buildAvailability(evs, time.Now().UTC())
+	}
 	writeJSON(w, http.StatusOK, detail)
 }
 
@@ -358,14 +363,18 @@ func buildHostRows(snap entity.Snapshot) []HostRow {
 		}
 	}
 	ipsByHost := map[int64][]string{}
+	onlineByHost := map[int64]bool{}
 	for _, a := range snap.Addresses {
 		if a.HostID != nil {
 			ipsByHost[*a.HostID] = append(ipsByHost[*a.HostID], a.IP)
+			if a.State == entity.StateActive {
+				onlineByHost[*a.HostID] = true
+			}
 		}
 	}
 	rows := make([]HostRow, 0, len(snap.Hosts))
 	for _, h := range snap.Hosts {
-		rows = append(rows, HostRow{Host: h, MACs: macsByHost[h.ID], IPs: ipsByHost[h.ID], Vendor: vendorByHost[h.ID]})
+		rows = append(rows, HostRow{Host: h, MACs: macsByHost[h.ID], IPs: ipsByHost[h.ID], Vendor: vendorByHost[h.ID], Online: onlineByHost[h.ID]})
 	}
 	return rows
 }

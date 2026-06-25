@@ -753,11 +753,83 @@ func (s *Store) ForgetSubjects(ctx context.Context, stableID string, subjects []
 		if _, err := tx.ExecContext(ctx, `DELETE FROM security_suppressions WHERE stable_id=?`, stableID); err != nil {
 			return 0, fmt.Errorf("sqlite: forget suppressions: %w", err)
 		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM availability_events WHERE stable_id=?`, stableID); err != nil {
+			return 0, fmt.Errorf("sqlite: forget availability: %w", err)
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
 	return removed, nil
+}
+
+// LatestAvailability returns the most recent online state per host (stable_id).
+func (s *Store) LatestAvailability(ctx context.Context) (map[string]bool, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT a.stable_id, a.online FROM availability_events a
+		JOIN (SELECT stable_id, MAX(id) AS mid FROM availability_events GROUP BY stable_id) m
+		ON a.id = m.mid`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var id string
+		var online int
+		if err := rows.Scan(&id, &online); err != nil {
+			return nil, err
+		}
+		out[id] = online != 0
+	}
+	return out, rows.Err()
+}
+
+// AppendAvailability records online/offline transition events.
+func (s *Store) AppendAvailability(ctx context.Context, events []entity.AvailabilityEvent) error {
+	if len(events) == 0 {
+		return nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	stmt, err := tx.PrepareContext(ctx, `INSERT INTO availability_events (stable_id, online, at) VALUES (?, ?, ?)`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	for _, e := range events {
+		online := 0
+		if e.Online {
+			online = 1
+		}
+		if _, err := stmt.ExecContext(ctx, e.StableID, online, ft(e.At)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// AvailabilityForHost returns a host's transition events, oldest first.
+func (s *Store) AvailabilityForHost(ctx context.Context, stableID string) ([]entity.AvailabilityEvent, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT online, at FROM availability_events
+		WHERE stable_id=? ORDER BY at ASC, id ASC`, stableID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []entity.AvailabilityEvent
+	for rows.Next() {
+		var online int
+		var at string
+		if err := rows.Scan(&online, &at); err != nil {
+			return nil, err
+		}
+		t, _ := parseTime(at)
+		out = append(out, entity.AvailabilityEvent{StableID: stableID, Online: online != 0, At: t})
+	}
+	return out, rows.Err()
 }
 
 // LastSeenBySubject returns the newest non-manual observation time per subject —

@@ -149,6 +149,15 @@ func (s SecuritySuppression) Active(now time.Time) bool {
 	return s.ExpiresAt == nil || now.Before(*s.ExpiresAt)
 }
 
+// AvailabilityEvent records an online/offline transition for a host (online =
+// has at least one active address). Appended only when the state flips, so the
+// table is bounded by transitions, not time.
+type AvailabilityEvent struct {
+	StableID string    `json:"stable_id,omitempty"`
+	Online   bool      `json:"online"`
+	At       time.Time `json:"at"`
+}
+
 // Snapshot is the full reconciled entity layer at a point in time. The
 // reconciler rebuilds it from the log and the store persists it atomically
 // (Reset + insert), which is exactly the §3.3 "reconstructable by replaying the

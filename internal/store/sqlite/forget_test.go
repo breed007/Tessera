@@ -65,6 +65,47 @@ func TestForgetSubjects(t *testing.T) {
 	}
 }
 
+func TestAvailability(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(filepath.Join(t.TempDir(), "av.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t0 := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	if err := st.AppendAvailability(ctx, []entity.AvailabilityEvent{
+		{StableID: "mac:aa", Online: true, At: t0},
+		{StableID: "mac:aa", Online: false, At: t0.Add(time.Hour)},
+		{StableID: "mac:bb", Online: true, At: t0},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	latest, err := st.LatestAvailability(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if latest["mac:aa"] != false || latest["mac:bb"] != true {
+		t.Fatalf("latest = %+v, want aa=false bb=true", latest)
+	}
+	evs, err := st.AvailabilityForHost(ctx, "mac:aa")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evs) != 2 || !evs[0].Online || evs[1].Online {
+		t.Fatalf("aa events = %+v, want [online, offline] oldest-first", evs)
+	}
+	// Forget clears availability history.
+	if _, err := st.ForgetSubjects(ctx, "mac:aa", []string{"aa"}); err != nil {
+		t.Fatal(err)
+	}
+	if evs, _ := st.AvailabilityForHost(ctx, "mac:aa"); len(evs) != 0 {
+		t.Errorf("availability should be cleared after forget: %+v", evs)
+	}
+}
+
 func TestLastSeenBySubject(t *testing.T) {
 	ctx := context.Background()
 	st, err := Open(filepath.Join(t.TempDir(), "ls.db"))

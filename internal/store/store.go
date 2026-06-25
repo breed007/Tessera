@@ -98,6 +98,17 @@ type ForgetStore interface {
 	LastSeenBySubject(ctx context.Context) (map[string]time.Time, error)
 }
 
+// AvailabilityStore persists device online/offline history (one row per
+// transition) for uptime reporting.
+type AvailabilityStore interface {
+	// LatestAvailability returns the most recent online state per stable_id.
+	LatestAvailability(ctx context.Context) (map[string]bool, error)
+	// AppendAvailability records new transition events.
+	AppendAvailability(ctx context.Context, events []entity.AvailabilityEvent) error
+	// AvailabilityForHost returns a host's transition events, oldest first.
+	AvailabilityForHost(ctx context.Context, stableID string) ([]entity.AvailabilityEvent, error)
+}
+
 // Store is the full persistence surface handed to the app at startup.
 type Store interface {
 	ObservationLog
@@ -105,6 +116,7 @@ type Store interface {
 	ConflictStore
 	SecuritySuppressionStore
 	ForgetStore
+	AvailabilityStore
 	Migrate(ctx context.Context) error
 	Close() error
 }

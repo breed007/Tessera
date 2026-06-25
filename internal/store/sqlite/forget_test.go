@@ -1,0 +1,102 @@
+package sqlite
+
+import (
+	"context"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/tessera/tessera/internal/entity"
+	"github.com/tessera/tessera/internal/observation"
+)
+
+func TestForgetSubjects(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(filepath.Join(t.TempDir(), "f.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t0 := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	const mac, ip, other = "aa:bb:cc:00:00:01", "10.0.0.5", "aa:bb:cc:00:00:99"
+	add := func(subj string, sty observation.SubjectType, src observation.Source, off time.Duration) {
+		if _, err := st.Append(ctx, observation.Observation{
+			ObservedAt: t0.Add(off), Source: src, CollectorID: "x",
+			SubjectType: sty, Subject: subj, Attribute: observation.AttrIPBinding, Value: "v", Confidence: 90,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add(mac, observation.SubjectMAC, observation.SourceUniFi, 0)
+	add(ip, observation.SubjectIPv4, observation.SourceActiveTCP, time.Minute)
+	add(other, observation.SubjectMAC, observation.SourceUniFi, 2*time.Minute) // a different device — must survive
+
+	// Workflow state tied to the host.
+	if err := st.SetSecuritySuppression(ctx, entity.SecuritySuppression{StableID: "mac:" + mac, Proto: "tcp", Port: 23}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetResolution(ctx, entity.ConflictResolution{Subject: "mac:" + mac, Attribute: "device_class", ResolvedAt: t0}); err != nil {
+		t.Fatal(err)
+	}
+
+	removed, err := st.ForgetSubjects(ctx, "mac:"+mac, []string{mac, ip})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed != 2 {
+		t.Fatalf("removed = %d, want 2 (mac + ip observations)", removed)
+	}
+	// The forgotten subjects' observations are gone; the other device's remain.
+	if obs, _ := st.ForSubjects(ctx, []string{mac, ip}); len(obs) != 0 {
+		t.Errorf("forgotten observations remain: %+v", obs)
+	}
+	if obs, _ := st.ForSubjects(ctx, []string{other}); len(obs) != 1 {
+		t.Errorf("other device's observation should survive, got %d", len(obs))
+	}
+	// Workflow state cleared.
+	if sp, _ := st.ListSecuritySuppressions(ctx); len(sp) != 0 {
+		t.Errorf("suppression should be cleared: %+v", sp)
+	}
+	if rs, _ := st.ListResolutions(ctx); len(rs) != 0 {
+		t.Errorf("resolution should be cleared: %+v", rs)
+	}
+}
+
+func TestLastSeenBySubject(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(filepath.Join(t.TempDir(), "ls.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t0 := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	rec := func(subj string, src observation.Source, at time.Time) {
+		if _, err := st.Append(ctx, observation.Observation{
+			ObservedAt: at, Source: src, CollectorID: "x", SubjectType: observation.SubjectMAC,
+			Subject: subj, Attribute: observation.AttrIPBinding, Value: "v", Confidence: 90,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rec("aa", observation.SourceUniFi, t0)
+	rec("aa", observation.SourceUniFi, t0.Add(48*time.Hour)) // newest network sighting
+	rec("aa", observation.SourceManual, t0.Add(100*time.Hour)) // manual edit must be excluded
+	rec("bb", observation.SourceManual, t0)                    // manual-only → absent from map
+
+	m, err := st.LastSeenBySubject(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := m["aa"]; !got.Equal(t0.Add(48 * time.Hour)) {
+		t.Errorf("last-seen aa = %v, want %v (manual excluded)", got, t0.Add(48*time.Hour))
+	}
+	if _, ok := m["bb"]; ok {
+		t.Errorf("manual-only subject bb should not appear in last-seen map")
+	}
+}

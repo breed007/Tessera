@@ -583,9 +583,12 @@ function renderDevices(hosts, openCount) {
   const actions = (h) => {
     if (!admin) return "";
     const b = (act, label) => `<button class="ghost dev-act" data-act="${act}" data-id="${esc(h.stable_id)}">${label}</button>`;
-    if (deviceTab === "new") return `<div class="card-actions">${b("expected", "✓ Expected")}${b("ignored", "⊘ Ignore")}</div>`;
-    if (deviceTab === "expected") return `<div class="card-actions">${b("ignored", "⊘ Ignore")}${b("new", "↩ New")}</div>`;
-    return `<div class="card-actions">${b("expected", "✓ Expected")}${b("new", "↩ New")}</div>`; // ignored
+    const fgt = `<button class="ghost dev-forget danger" data-id="${esc(h.stable_id)}" data-name="${esc(h.display_name || "")}" title="Delete all history and let it be rediscovered">⌫ Forget</button>`;
+    let acts;
+    if (deviceTab === "new") acts = b("expected", "✓ Expected") + b("ignored", "⊘ Ignore");
+    else if (deviceTab === "expected") acts = b("ignored", "⊘ Ignore") + b("new", "↩ New");
+    else acts = b("expected", "✓ Expected") + b("new", "↩ New"); // ignored
+    return `<div class="card-actions">${acts}${fgt}</div>`;
   };
   $("device-list").innerHTML = list.length ? list.map((h) => `
     <div class="card" data-id="${esc(h.stable_id)}">
@@ -596,7 +599,7 @@ function renderDevices(hosts, openCount) {
     </div>`).join("") : `<p class="muted-note">Nothing here.</p>`;
 
   for (const c of $("device-list").querySelectorAll(".card")) {
-    c.onclick = (e) => { if (!e.target.closest(".dev-act")) openHost(c.dataset.id); };
+    c.onclick = (e) => { if (!e.target.closest("button")) openHost(c.dataset.id); };
   }
   for (const b of $("device-list").querySelectorAll(".dev-act")) {
     b.onclick = async () => {
@@ -609,6 +612,21 @@ function renderDevices(hosts, openCount) {
       catch (e) { toast(e.message); b.disabled = false; }
     };
   }
+  for (const b of $("device-list").querySelectorAll(".dev-forget")) {
+    b.onclick = () => forgetDevice(b.dataset.id, b.dataset.name);
+  }
+}
+
+// forgetDevice permanently deletes a device's stored history + annotations so it
+// can be rediscovered fresh. Destructive → always confirmed.
+async function forgetDevice(stableId, name) {
+  if (!confirm(`Forget “${name || stableId}”?\n\nThis permanently deletes all stored history and annotations for this device. If it's still on the network, it will be rediscovered as a new device on the next scan.`)) return;
+  try {
+    const r = await post("/api/host/forget", { stable_id: stableId });
+    toast(`Forgotten — ${r.observations_removed} records removed`);
+    closePanels();
+    refresh();
+  } catch (e) { toast(e.message); }
 }
 // openConflicts is the dedicated conflict workflow: open disagreements (with a
 // "keep this one" decision + note) and the log of resolved ones (with reopen).
@@ -708,7 +726,7 @@ async function openHost(id) {
       <button type="submit" class="primary">Save annotation</button>
     </form>` : "";
 
-  const actions = me.is_admin ? `<div class="detail-actions"><button id="rescan-host" class="ghost" title="Actively probe this host's addresses now">↻ Rescan host</button></div>` : "";
+  const actions = me.is_admin ? `<div class="detail-actions"><button id="rescan-host" class="ghost" title="Actively probe this host's addresses now">↻ Rescan host</button><button id="forget-host" class="ghost danger" title="Delete all history and let it be rediscovered">⌫ Forget</button></div>` : "";
 
   $("detail-body").innerHTML = `
     <h2><span class="dev-icon-lg" style="${iconStyle(d.icon_url, "var(--accent)")}"></span>${esc(h.display_name || "(unnamed)")}</h2>
@@ -749,6 +767,8 @@ async function openHost(id) {
         toast(`Rescanned ${res.probed} address(es)`); openHost(id); refresh();
       } catch (e) { toast(e.message); rb.disabled = false; rb.textContent = "↻ Rescan host"; }
     };
+    const fb = $("forget-host");
+    if (fb) fb.onclick = () => forgetDevice(h.stable_id, h.display_name);
   }
   openPanel("detail");
 }
@@ -870,6 +890,12 @@ async function openSettings() {
       </div>
     </div>
 
+    <div class="settings-section"><h3>Maintenance</h3>
+      ${chk("set-prune-en", "Auto-forget dormant devices", e.forget_dormant_enabled)}
+      <div class="field"><label>Forget after (days not seen on the network)</label><input type="number" id="set-prune-days" min="1" value="${e.forget_dormant_days || 30}" style="width:100px"></div>
+      <p class="muted-note">When enabled, a device not seen for this many days is automatically forgotten — its history and annotations are deleted, and it returns as a new device only if it reappears. Off by default; applies after a restart. Manual “Forget” is always available per device (card + detail page). Devices that were only ever entered by hand are never auto-pruned.</p>
+    </div>
+
     <div class="settings-section"><h3>Users</h3>
       <div id="user-list">${users.map(userRow).join("")}</div>
       <div class="field row" style="margin-top:10px">
@@ -980,6 +1006,7 @@ function wireSettings(canSec) {
       alert_new_device: checked("set-al-new"), alert_offline: checked("set-al-off"),
       alert_online: checked("set-al-on"), alert_ip_changed: checked("set-al-ip"), alert_conflict: checked("set-al-cf"),
       alert_risky_service: checked("set-al-risk"),
+      forget_dormant_enabled: checked("set-prune-en"), forget_dormant_days: +val("set-prune-days") || 30,
     };
     const secrets = {};
     if (canSec) {

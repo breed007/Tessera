@@ -7,6 +7,7 @@ package store
 
 import (
 	"context"
+	"time"
 
 	"github.com/tessera/tessera/internal/entity"
 	"github.com/tessera/tessera/internal/observation"
@@ -83,12 +84,27 @@ type SecuritySuppressionStore interface {
 	DeleteSecuritySuppression(ctx context.Context, stableID, proto string, port int) error
 }
 
+// ForgetStore deletes all trace of a device so it can be rediscovered fresh, and
+// supports age-based pruning of dormant devices. Forgetting removes the device's
+// log observations (by subject) plus its workflow state (resolutions,
+// suppressions) — a deliberate, admin-only departure from the append-only log,
+// for cleaning up decommissioned hardware / deleted VMs.
+type ForgetStore interface {
+	// ForgetSubjects deletes log observations for the given subjects and the
+	// host's workflow state; returns the number of observations removed.
+	ForgetSubjects(ctx context.Context, stableID string, subjects []string) (removed int64, err error)
+	// LastSeenBySubject returns the newest non-manual observation time per
+	// subject — the "last seen on the network" signal used by auto-prune.
+	LastSeenBySubject(ctx context.Context) (map[string]time.Time, error)
+}
+
 // Store is the full persistence surface handed to the app at startup.
 type Store interface {
 	ObservationLog
 	EntityStore
 	ConflictStore
 	SecuritySuppressionStore
+	ForgetStore
 	Migrate(ctx context.Context) error
 	Close() error
 }

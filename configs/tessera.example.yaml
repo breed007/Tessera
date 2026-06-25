@@ -115,6 +115,8 @@ reconcile:
   free_after: 168h
   confidence_half_life: 72h
   compact_interval: 6h    # collapse repeated log rows this often to bound disk; 0 = never
+  forget_dormant_enabled: false  # auto-forget devices not seen for N days (deletes history + annotations)
+  forget_dormant_days: 30        # the dormancy window when the above is enabled
 
 api:
   enabled: true

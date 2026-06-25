@@ -400,6 +400,15 @@ func (a *App) Run(ctx context.Context) error {
 		}()
 	}
 
+	// Auto-prune: forget devices not seen for N days (opt-in; destructive).
+	if a.cfg.Reconcile.ForgetDormantEnabled && a.cfg.Reconcile.ForgetDormantDays > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			a.pruneLoop(ctx, a.cfg.Reconcile.ForgetDormantDays)
+		}()
+	}
+
 	// Initial reconcile so entities reflect whatever is already in the log. This
 	// also seeds the alert baseline silently (so existing devices don't all fire).
 	if _, err := a.recon.Rebuild(ctx); err != nil {
@@ -451,6 +460,69 @@ func (a *App) compactLoop(ctx context.Context, interval time.Duration) {
 			} else if n > 0 {
 				a.log.Info("log compacted", "rows_removed", n)
 			}
+		}
+	}
+}
+
+// pruneLoop periodically forgets devices that haven't been seen on the network
+// for the configured number of days (decommissioned hardware, deleted VMs). It
+// runs once shortly after start, then hourly (the window is in days, so a coarse
+// cadence is plenty).
+func (a *App) pruneLoop(ctx context.Context, days int) {
+	t := time.NewTicker(time.Hour)
+	defer t.Stop()
+	a.pruneDormant(ctx, days)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			a.pruneDormant(ctx, days)
+		}
+	}
+}
+
+// pruneDormant forgets each host whose newest network observation is older than
+// the cutoff. Hosts with no discovery observations (manual/user-created entries)
+// are never auto-pruned.
+func (a *App) pruneDormant(ctx context.Context, days int) {
+	cutoff := time.Now().Add(-time.Duration(days) * 24 * time.Hour)
+	lastSeen, err := a.store.LastSeenBySubject(ctx)
+	if err != nil {
+		a.log.Error("auto-prune: last-seen lookup failed", "err", err)
+		return
+	}
+	snap, err := a.store.LoadEntities(ctx)
+	if err != nil {
+		a.log.Error("auto-prune: load entities failed", "err", err)
+		return
+	}
+	pruned := 0
+	for _, h := range snap.Hosts {
+		subjects := snap.SubjectsForHost(h.ID)
+		var newest time.Time
+		seenOnNetwork := false
+		for _, sub := range subjects {
+			if ts, ok := lastSeen[sub]; ok {
+				seenOnNetwork = true
+				if ts.After(newest) {
+					newest = ts
+				}
+			}
+		}
+		if !seenOnNetwork || !newest.Before(cutoff) {
+			continue // never observed by a collector, or seen recently
+		}
+		if _, err := a.store.ForgetSubjects(ctx, h.StableID, subjects); err != nil {
+			a.log.Error("auto-prune: forget failed", "stable_id", h.StableID, "err", err)
+			continue
+		}
+		a.log.Info("auto-pruned dormant device", "stable_id", h.StableID, "last_seen", newest.Format(time.RFC3339), "dormant_days", days)
+		pruned++
+	}
+	if pruned > 0 {
+		if _, err := a.recon.Rebuild(ctx); err != nil {
+			a.log.Error("auto-prune: reconcile failed", "err", err)
 		}
 	}
 }

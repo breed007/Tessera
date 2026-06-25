@@ -722,6 +722,67 @@ func (s *Store) DeleteSecuritySuppression(ctx context.Context, stableID, proto s
 	return err
 }
 
+// ForgetSubjects deletes the log observations for the given subjects plus the
+// host's workflow state (conflict resolutions, security suppressions), in one
+// transaction. Returns the number of observations removed.
+func (s *Store) ForgetSubjects(ctx context.Context, stableID string, subjects []string) (int64, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after a successful commit
+
+	var removed int64
+	if len(subjects) > 0 {
+		placeholders := make([]string, len(subjects))
+		args := make([]any, len(subjects))
+		for i, sub := range subjects {
+			placeholders[i] = "?"
+			args[i] = sub
+		}
+		res, err := tx.ExecContext(ctx, `DELETE FROM observations WHERE subject IN (`+strings.Join(placeholders, ",")+`)`, args...)
+		if err != nil {
+			return 0, fmt.Errorf("sqlite: forget observations: %w", err)
+		}
+		removed, _ = res.RowsAffected()
+	}
+	if stableID != "" {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM conflict_resolutions WHERE subject=?`, stableID); err != nil {
+			return 0, fmt.Errorf("sqlite: forget resolutions: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM security_suppressions WHERE stable_id=?`, stableID); err != nil {
+			return 0, fmt.Errorf("sqlite: forget suppressions: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return removed, nil
+}
+
+// LastSeenBySubject returns the newest non-manual observation time per subject —
+// i.e. how recently each device was actually seen on the network (manual
+// annotations are excluded so a hand-edited name doesn't keep a gone device alive).
+func (s *Store) LastSeenBySubject(ctx context.Context) (map[string]time.Time, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT subject, MAX(observed_at) FROM observations
+		WHERE source != ? GROUP BY subject`, string(observation.SourceManual))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]time.Time{}
+	for rows.Next() {
+		var subject, at string
+		if err := rows.Scan(&subject, &at); err != nil {
+			return nil, err
+		}
+		if t, err := parseTime(at); err == nil {
+			out[subject] = t
+		}
+	}
+	return out, rows.Err()
+}
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 func ft(t time.Time) string { return t.UTC().Format(rfc3339ms) }

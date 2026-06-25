@@ -137,6 +137,8 @@ button.primary:hover { filter: brightness(1.12); }
 button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent-dim); border-radius: 4px; padding: 5px 12px; font-weight: 700; font-family: var(--mono); font-size: 12px; cursor: pointer; }
 button.ghost:hover:not(:disabled) { background: var(--surface-raised); border-color: var(--accent); }
 button.ghost:disabled { opacity: 0.6; cursor: default; }
+button.ghost.danger { color: var(--absent); border-color: color-mix(in srgb, var(--absent) 50%, transparent); }
+button.ghost.danger:hover:not(:disabled) { border-color: var(--absent); background: color-mix(in srgb, var(--absent) 12%, transparent); }
 .detail-actions { margin: -4px 0 14px; }
 .status-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin-left: 8px; padding: 1px 7px; border-radius: 3px; border: 1px solid var(--hairline); vertical-align: middle; }
 .status-badge.ok { color: var(--accent); border-color: var(--accent-dim); }

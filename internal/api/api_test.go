@@ -152,6 +152,40 @@ func TestAnnotationReflected(t *testing.T) {
 	}
 }
 
+func TestForgetHost(t *testing.T) {
+	ts := setup(t)
+	// Host exists.
+	if detail := getJSON[HostDetail](t, ts.URL+"/api/host?id=mac:b8:27:eb:11:22:33"); detail.Host.StableID == "" {
+		t.Fatal("seeded host missing before forget")
+	}
+	// Forget it.
+	r := authPost(t, ts.URL+"/api/host/forget", map[string]any{"stable_id": "mac:b8:27:eb:11:22:33"})
+	if r.StatusCode != 200 {
+		t.Fatalf("forget → %d", r.StatusCode)
+	}
+	var resp struct {
+		OK                  bool  `json:"ok"`
+		ObservationsRemoved int64 `json:"observations_removed"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&resp)
+	r.Body.Close()
+	if !resp.OK || resp.ObservationsRemoved == 0 {
+		t.Fatalf("forget response = %+v, want ok + >0 removed", resp)
+	}
+	// Host is gone after reconcile.
+	gone := authGet(t, ts.URL+"/api/host?id=mac:b8:27:eb:11:22:33")
+	gone.Body.Close()
+	if gone.StatusCode != 404 {
+		t.Fatalf("after forget, GET host → %d, want 404", gone.StatusCode)
+	}
+	// Unknown host → 404.
+	r2 := authPost(t, ts.URL+"/api/host/forget", map[string]any{"stable_id": "mac:00:00:00:00:00:00"})
+	r2.Body.Close()
+	if r2.StatusCode != 404 {
+		t.Fatalf("forget unknown → %d, want 404", r2.StatusCode)
+	}
+}
+
 func TestTagsRoundTrip(t *testing.T) {
 	ts := setup(t)
 	// Multiple tags; whitespace + an embedded comma should be normalized away.

@@ -162,3 +162,28 @@ type Snapshot struct {
 	Topology   []Topology  `json:"topology"`
 	Conflicts  []Conflict  `json:"conflicts"`
 }
+
+// SubjectsForHost returns the observation-log subjects that make up a host — its
+// interface MAC(s) and bound IP(s). These are the keys to delete when forgetting
+// a device (so it can be rediscovered fresh).
+func (s Snapshot) SubjectsForHost(hostID int64) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(v string) {
+		if v != "" && !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	for _, i := range s.Interfaces {
+		if i.HostID == hostID {
+			add(i.MAC)
+		}
+	}
+	for _, a := range s.Addresses {
+		if a.HostID != nil && *a.HostID == hostID {
+			add(a.IP)
+		}
+	}
+	return out
+}

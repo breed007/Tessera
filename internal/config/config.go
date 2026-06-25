@@ -164,6 +164,11 @@ type Reconcile struct {
 	FreeAfter          time.Duration `yaml:"free_after"`
 	ConfidenceHalfLife time.Duration `yaml:"confidence_half_life"`
 	CompactInterval    time.Duration `yaml:"compact_interval"` // collapse repeated log rows this often; 0 = never (§M9)
+
+	// Auto-prune: forget devices not seen on the network for ForgetDormantDays.
+	// Off by default (destructive: deletes history + annotations).
+	ForgetDormantEnabled bool `yaml:"forget_dormant_enabled"`
+	ForgetDormantDays    int  `yaml:"forget_dormant_days"`
 }
 
 // Storage configures the persistence driver (§5).
@@ -221,10 +226,12 @@ func Default() Config {
 			SubmitUnknown: false,
 		},
 		Reconcile: Reconcile{
-			StaleAfter:         24 * time.Hour,
-			FreeAfter:          168 * time.Hour,
-			ConfidenceHalfLife: 72 * time.Hour,
-			CompactInterval:    6 * time.Hour,
+			StaleAfter:           24 * time.Hour,
+			FreeAfter:            168 * time.Hour,
+			ConfidenceHalfLife:   72 * time.Hour,
+			CompactInterval:      6 * time.Hour,
+			ForgetDormantEnabled: false,
+			ForgetDormantDays:    30,
 		},
 		Storage: Storage{
 			Driver: "sqlite",

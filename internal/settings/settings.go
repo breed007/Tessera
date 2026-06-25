@@ -54,6 +54,10 @@ type Editable struct {
 
 	SensorEnabled bool `json:"sensor_enabled"`
 
+	// Auto-prune dormant devices (off by default; days default 30).
+	ForgetDormantEnabled bool `json:"forget_dormant_enabled"`
+	ForgetDormantDays    int  `json:"forget_dormant_days"`
+
 	// Alerts (the webhook URL itself is a secret; see SecretsInput.AlertURL).
 	AlertsEnabled   bool   `json:"alerts_enabled"`
 	AlertsKind      string `json:"alerts_kind"`
@@ -210,6 +214,10 @@ func applyEditable(c *config.Config, e Editable) {
 	c.ActiveProbe.Interface = e.ActiveProbeInterface
 	c.ActiveProbe.SNMPCommunities = e.SNMPCommunities
 	c.Sensor.Enabled = e.SensorEnabled
+	c.Reconcile.ForgetDormantEnabled = e.ForgetDormantEnabled
+	if e.ForgetDormantDays > 0 {
+		c.Reconcile.ForgetDormantDays = e.ForgetDormantDays
+	}
 	c.Alerts = config.Alerts{
 		Enabled: e.AlertsEnabled, Kind: e.AlertsKind,
 		NewDevice: e.AlertNewDevice, Offline: e.AlertOffline, Online: e.AlertOnline,
@@ -254,6 +262,9 @@ func extractEditable(c config.Config) Editable {
 		AlertConflict:        c.Alerts.Conflict,
 		AlertRiskyService:    c.Alerts.RiskyService,
 		SensorEnabled:        c.Sensor.Enabled,
+
+		ForgetDormantEnabled: c.Reconcile.ForgetDormantEnabled,
+		ForgetDormantDays:    c.Reconcile.ForgetDormantDays,
 
 		DiscPassiveARP:       d.PassiveARP,
 		DiscPassiveDHCP:      d.PassiveDHCP,

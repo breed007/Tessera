@@ -111,6 +111,38 @@ func TestDeleteObservations(t *testing.T) {
 	}
 }
 
+func TestBackup(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	st, err := Open(filepath.Join(dir, "src.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Append(ctx, observation.Observation{
+		ObservedAt: time.Now(), Source: observation.SourceUniFi, CollectorID: "x",
+		SubjectType: observation.SubjectMAC, Subject: "aa:bb:cc:00:00:01", Attribute: observation.AttrIPBinding, Value: "10.0.0.5", Confidence: 90,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(dir, "backup.db")
+	if err := st.Backup(ctx, dest); err != nil {
+		t.Fatalf("backup: %v", err)
+	}
+	// The backup opens as a valid Tessera DB with the same data.
+	bk, err := Open(dest)
+	if err != nil {
+		t.Fatalf("open backup: %v", err)
+	}
+	defer bk.Close()
+	if n, err := bk.CountObservations(ctx); err != nil || n != 1 {
+		t.Fatalf("backup observations = %d,%v want 1,nil", n, err)
+	}
+}
+
 func TestAvailability(t *testing.T) {
 	ctx := context.Background()
 	st, err := Open(filepath.Join(t.TempDir(), "av.db"))

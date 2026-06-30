@@ -156,6 +156,8 @@ type Store interface {
 	AvailabilityStore
 	MergeStore
 	PrecedenceStore
+	// Backup writes a consistent snapshot of the database to destPath.
+	Backup(ctx context.Context, destPath string) error
 	Migrate(ctx context.Context) error
 	Close() error
 }

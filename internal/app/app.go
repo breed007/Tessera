@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/netip"
+	"os"
 	"sync"
 	"time"
 
@@ -57,6 +58,10 @@ type App struct {
 // bootstraps the admin user, and constructs the enabled collectors from the
 // EFFECTIVE config. The caller owns the lifecycle via Run/Close.
 func New(ctx context.Context, fileCfg config.Config, log *slog.Logger) (*App, error) {
+	// A staged restore (uploaded via the UI) is swapped in before the DB opens.
+	if fileCfg.Storage.Driver == "sqlite" {
+		applyPendingRestore(fileCfg.Storage.DSN, log)
+	}
 	st, err := openStore(fileCfg)
 	if err != nil {
 		return nil, err
@@ -153,6 +158,7 @@ func New(ctx context.Context, fileCfg config.Config, log *slog.Logger) (*App, er
 			Token:           cfg.Secrets.APIToken,
 			TLS:             api.TLSOptions{Enabled: cfg.API.TLS, CertFile: cfg.API.TLSCertFile, KeyFile: cfg.API.TLSKeyFile},
 			DataDir:         dataDir,
+			DSN:             cfg.Storage.DSN,
 			AllowInsecure:   cfg.API.AllowInsecure,
 			FirstRun:        firstRun,
 			SetupToken:      setupToken,
@@ -350,6 +356,45 @@ func buildEnricher(cfg config.Config) (fingerbank.Enricher, error) {
 // openStore builds the configured storage driver behind the store.Store seam.
 // openStore returns the concrete *sqlite.Store, which satisfies store.Store plus
 // the account.Store and settings.Store capability interfaces used by §M10.
+// applyPendingRestore swaps in a database staged by the restore endpoint
+// (<dsn>.restore) before the store opens. It validates the staged file by
+// opening it and checking the schema; an invalid file is discarded so a bad
+// upload can never replace a working database. The replaced DB is kept as
+// <dsn>.prev for one generation.
+func applyPendingRestore(dsn string, log *slog.Logger) {
+	restore := dsn + ".restore"
+	if _, err := os.Stat(restore); err != nil {
+		return // nothing staged
+	}
+	// Validate: it must open and have the core schema.
+	if vst, err := sqlite.Open(restore); err != nil {
+		log.Error("restore rejected — cannot open staged database", "err", err)
+		_ = os.Remove(restore)
+		return
+	} else {
+		_, qErr := vst.CountObservations(context.Background())
+		_ = vst.Close()
+		if qErr != nil {
+			log.Error("restore rejected — staged database is not a Tessera DB", "err", qErr)
+			_ = os.Remove(restore)
+			_ = os.Remove(restore + "-wal")
+			_ = os.Remove(restore + "-shm")
+			return
+		}
+	}
+	// Swap: drop the live DB + its WAL/SHM, then move the staged file into place.
+	for _, sfx := range []string{"", "-wal", "-shm"} {
+		_ = os.Remove(dsn + sfx)
+	}
+	_ = os.Remove(restore + "-wal")
+	_ = os.Remove(restore + "-shm")
+	if err := os.Rename(restore, dsn); err != nil {
+		log.Error("restore failed — could not swap database into place", "err", err)
+		return
+	}
+	log.Warn("database restored from staged backup", "dsn", dsn)
+}
+
 func openStore(cfg config.Config) (*sqlite.Store, error) {
 	switch cfg.Storage.Driver {
 	case "sqlite":

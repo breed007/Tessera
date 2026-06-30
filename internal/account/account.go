@@ -52,6 +52,15 @@ type Store interface {
 	PruneSessions(ctx context.Context, now time.Time) error
 
 	Audit(ctx context.Context, username, action, detail string) error
+	ListAudit(ctx context.Context, limit int) ([]AuditEntry, error)
+}
+
+// AuditEntry is one recorded action in the audit trail.
+type AuditEntry struct {
+	At       time.Time `json:"at"`
+	Username string    `json:"username"`
+	Action   string    `json:"action"`
+	Detail   string    `json:"detail,omitempty"`
 }
 
 var (
@@ -251,6 +260,11 @@ func (m *Manager) ChangePassword(ctx context.Context, username, current, next st
 // Audit records an action in the audit trail.
 func (m *Manager) Audit(ctx context.Context, username, action, detail string) error {
 	return m.store.Audit(ctx, username, action, detail)
+}
+
+// ListAudit returns the most recent audit entries (newest first).
+func (m *Manager) ListAudit(ctx context.Context, limit int) ([]AuditEntry, error) {
+	return m.store.ListAudit(ctx, limit)
 }
 
 func (m *Manager) guardLastAdmin(ctx context.Context) error {

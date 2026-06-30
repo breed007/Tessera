@@ -32,6 +32,7 @@ type Options struct {
 	Token          string // optional admin bearer token (automation)
 	TLS            TLSOptions
 	DataDir        string // where a self-signed cert is cached
+	DSN            string // database file path (backup/restore)
 	AllowInsecure  bool   // disable auth entirely (open API)
 	FirstRun       bool   // no accounts yet → serve token-gated setup
 	SetupToken     string // one-time first-run token
@@ -75,6 +76,7 @@ type Server struct {
 	token         string
 	tls           TLSOptions
 	dataDir       string
+	dsn           string
 	allowInsecure bool
 	setupToken    string
 	setupFile     string
@@ -106,6 +108,7 @@ func New(opts Options) *Server {
 		token:         opts.Token,
 		tls:           opts.TLS,
 		dataDir:       opts.DataDir,
+		dsn:           opts.DSN,
 		allowInsecure: opts.AllowInsecure,
 		setupToken:    opts.SetupToken,
 		setupFile:     opts.SetupTokenFile,
@@ -194,6 +197,9 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/test/fingerbank", s.handleTestFingerbank)
 	mux.HandleFunc("POST /api/test/alert", s.handleTestAlert)
 	mux.HandleFunc("POST /api/restart", s.handleRestart)
+	mux.HandleFunc("GET /api/audit", s.handleAudit)
+	mux.HandleFunc("GET /api/backup", s.handleBackup)
+	mux.HandleFunc("POST /api/restore", s.handleRestore)
 
 	// Device icons (§M12). Custom icon assets are public like the bundled ones.
 	mux.HandleFunc("GET /api/icons", s.handleListIcons)

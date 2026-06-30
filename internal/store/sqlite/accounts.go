@@ -141,3 +141,25 @@ func (s *Store) Audit(ctx context.Context, username, action, detail string) erro
 		ft(time.Now()), username, action, detail)
 	return err
 }
+
+func (s *Store) ListAudit(ctx context.Context, limit int) ([]account.AuditEntry, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 200
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT at, username, action, detail FROM audit ORDER BY id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []account.AuditEntry
+	for rows.Next() {
+		var e account.AuditEntry
+		var at string
+		if err := rows.Scan(&at, &e.Username, &e.Action, &e.Detail); err != nil {
+			return nil, err
+		}
+		e.At, _ = parseTime(at)
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}

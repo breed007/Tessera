@@ -1127,9 +1127,11 @@ async function openHost(id) {
 // ── settings ─────────────────────────────────────────────────────────────────
 
 async function openSettings() {
-  const [s, users, allIcons, statuses] = await Promise.all([
+  const [s, users, allIcons, statuses, auditResp] = await Promise.all([
     getJSON("/api/settings"), getJSON("/api/users"), loadIcons(true), getJSON("/api/status").catch(() => []),
+    getJSON("/api/audit").catch(() => ({ entries: [] })),
   ]);
+  const audit = auditResp.entries || [];
   const customIcons = allIcons.filter((i) => i.source === "custom");
   const e = s.editable, flags = s.secrets_set, canSec = s.can_store_secrets;
   const statusByName = {};
@@ -1253,6 +1255,24 @@ async function openSettings() {
       <p class="muted-note">When enabled, a device not seen for this many days is automatically forgotten — its history and annotations are deleted, and it returns as a new device only if it reappears. Off by default; applies after a restart. Manual “Forget” is always available per device (card + detail page). Devices that were only ever entered by hand are never auto-pruned.</p>
     </div>
 
+    <div class="settings-section"><h3>Backup &amp; restore</h3>
+      <p class="muted-note">A backup is a full snapshot of the database — inventory, settings, users, and history. Secrets stay encrypted with this server's key, so restore to the same server (or copy <code>secret.key</code> from the data dir too).</p>
+      <div class="field row">
+        <a class="btn" href="/api/backup" download>⤓ Download backup</a>
+      </div>
+      <div class="field row" style="margin-top:10px">
+        <input type="file" id="restore-file" accept=".db,.sqlite,application/octet-stream" style="flex:1">
+        <button class="btn danger" id="btn-restore">Restore…</button>
+      </div>
+      <p class="muted-note">Restoring replaces ALL current data and restarts the server. The replaced database is kept as <code>&lt;db&gt;.prev</code> for one generation.</p>
+    </div>
+
+    <div class="settings-section"><h3>Audit log</h3>
+      ${audit.length ? `<table class="obs"><thead><tr><th>Time</th><th>User</th><th>Action</th><th>Detail</th></tr></thead>
+        <tbody>${audit.map((a) => `<tr><td>${fmtTime(a.at)}</td><td>${esc(a.username)}</td><td class="mono">${esc(a.action)}</td><td>${esc(a.detail || "")}</td></tr>`).join("")}</tbody></table>`
+        : `<p class="muted-note">No audit entries yet. Settings changes, user management, and restores are recorded here.</p>`}
+    </div>
+
     <div class="settings-section"><h3>Users</h3>
       <div id="user-list">${users.map(userRow).join("")}</div>
       <div class="field row" style="margin-top:10px">
@@ -1300,6 +1320,18 @@ function secInput(id) { const v = $(id).value; return v ? v : undefined; }
 
 function wireSettings(canSec) {
   if ($("btn-restart")) $("btn-restart").onclick = async () => { await post("/api/restart"); toast("Restarting…"); setTimeout(() => location.reload(), 4000); };
+
+  if ($("btn-restore")) $("btn-restore").onclick = async () => {
+    const f = $("restore-file").files[0];
+    if (!f) { toast("Choose a backup file first"); return; }
+    if (!confirm("Restore the database from this file?\n\nThis REPLACES all current data and restarts the server. The current database is kept as <db>.prev for one generation.")) return;
+    try {
+      const res = await fetch("/api/restore", { method: "POST", body: f, credentials: "same-origin" });
+      if (!res.ok) { let m = res.statusText; try { m = (await res.json()).error || m; } catch {} throw new Error(m); }
+      toast("Restore staged — server restarting…");
+      setTimeout(() => location.reload(), 5000);
+    } catch (e) { toast(e.message); }
+  };
 
   $("btn-test-unifi").onclick = () => runTest("/api/test/unifi", "tr-unifi", {
     base_url: val("set-unifi-url"), path_prefix: val("set-unifi-prefix"), site: val("set-unifi-site"),

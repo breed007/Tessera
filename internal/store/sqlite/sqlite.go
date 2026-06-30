@@ -8,6 +8,7 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
+	"os"
 	"strings"
 	"time"
 
@@ -957,6 +958,16 @@ func (s *Store) AvailabilityForHost(ctx context.Context, stableID string) ([]ent
 		out = append(out, entity.AvailabilityEvent{StableID: stableID, Online: online != 0, At: t})
 	}
 	return out, rows.Err()
+}
+
+// Backup writes a consistent snapshot of the database to destPath using
+// SQLite's VACUUM INTO (safe to run on a live DB; destPath must not exist).
+func (s *Store) Backup(ctx context.Context, destPath string) error {
+	if err := os.Remove(destPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `VACUUM INTO ?`, destPath)
+	return err
 }
 
 // AllAvailability returns every host's transition events, oldest first.

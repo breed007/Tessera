@@ -191,12 +191,14 @@ function renderSubnets(rows) {
   if (me.is_admin) cols.push("");
   $("detail-body").innerHTML = `<h2>Subnets <span class="badge">${rows.length}</span></h2>
     <p class="muted-note">Click a subnet to see its address map and utilization.</p>
+    ${me.is_admin ? `<div class="detail-actions"><button class="ghost" id="add-subnet-btn">+ Add subnet</button></div>` : ""}
     <table class="obs"><thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead>
     <tbody>${rows.map((s) => `<tr class="subnet-row" data-id="${s.id}">
       <td class="mono">${esc(s.cidr)}</td><td>${s.vlan_id ?? "—"}</td><td>${esc(s.name || "—")}</td>
       <td class="mono">${esc(s.gateway || "—")}</td><td>${esc(s.source)}</td>
       ${me.is_admin ? `<td><button class="ghost rescan-subnet" data-id="${s.id}" data-cidr="${esc(s.cidr)}" title="Actively probe every address in this subnet">↻ Rescan</button></td>` : ""}
     </tr>`).join("")}</tbody></table>`;
+  if ($("add-subnet-btn")) $("add-subnet-btn").onclick = openCreateSubnet;
   for (const tr of $("detail-body").querySelectorAll(".subnet-row")) {
     tr.style.cursor = "pointer";
     tr.onclick = (e) => { if (!e.target.closest(".rescan-subnet")) openSubnet(tr.dataset.id); };
@@ -582,6 +584,12 @@ function renderDevices(hosts, openCount) {
     };
   }
 
+  if (me.is_admin && $("device-tabs") && !$("add-device-btn")) {
+    const b = document.createElement("button");
+    b.id = "add-device-btn"; b.className = "ghost add-btn"; b.textContent = "+ Add device";
+    b.onclick = openCreateHost;
+    $("device-tabs").appendChild(b);
+  }
   $("device-hint").textContent = DEVICE_HINTS[deviceTab];
   const list = groups[deviceTab] || [];
   const admin = me.is_admin;
@@ -634,6 +642,53 @@ async function forgetDevice(stableId, name) {
     refresh();
   } catch (e) { toast(e.message); }
 }
+
+// openCreateHost documents a device by hand (offline gear / planned kit). MAC required.
+function openCreateHost() {
+  $("detail-body").innerHTML = `
+    <h2>Add device</h2>
+    <p class="muted-note">Document a device you know exists but haven't discovered yet (offline gear, planned kit). A MAC address is required — it's the stable identity. The device is marked Expected.</p>
+    <form class="annotate" id="create-host-form">
+      <label>MAC address *</label><input type="text" id="ch-mac" placeholder="aa:bb:cc:dd:ee:ff" autocomplete="off">
+      <label>IP address</label><input type="text" id="ch-ip" placeholder="10.0.0.5" autocomplete="off">
+      <label>Display name</label><input type="text" id="ch-name">
+      <label>Device / Hardware</label><input type="text" id="ch-class">
+      <label>Model</label><input type="text" id="ch-model">
+      <label>Notes</label><input type="text" id="ch-notes">
+      <button type="submit" class="primary">Add device</button>
+    </form>`;
+  openPanel("detail");
+  $("create-host-form").onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const r = await post("/api/host/create", { mac: $("ch-mac").value, ip: $("ch-ip").value, display_name: $("ch-name").value, device_class: $("ch-class").value, model: $("ch-model").value, notes: $("ch-notes").value });
+      toast("Device added"); openHost(r.stable_id); refresh();
+    } catch (err) { toast(err.message); }
+  };
+}
+
+// openCreateSubnet documents a network by hand.
+function openCreateSubnet() {
+  $("detail-body").innerHTML = `
+    <h2>Add subnet</h2>
+    <p class="muted-note">Document a network Tessera hasn't seeded from UniFi or traffic.</p>
+    <form class="annotate" id="create-subnet-form">
+      <label>CIDR *</label><input type="text" id="cs-cidr" placeholder="10.0.0.0/24" autocomplete="off">
+      <label>Name</label><input type="text" id="cs-name" placeholder="e.g. IoT VLAN">
+      <label>VLAN id</label><input type="number" id="cs-vlan" min="0">
+      <button type="submit" class="primary">Add subnet</button>
+    </form>`;
+  openPanel("detail");
+  $("create-subnet-form").onsubmit = async (e) => {
+    e.preventDefault();
+    const vlan = $("cs-vlan").value ? Number($("cs-vlan").value) : undefined;
+    try {
+      await post("/api/subnet/create", { cidr: $("cs-cidr").value, name: $("cs-name").value, vlan });
+      toast("Subnet added"); closePanels(); refresh();
+    } catch (err) { toast(err.message); }
+  };
+}
+
 // openConflicts is the dedicated conflict workflow: open disagreements (with a
 // "keep this one" decision + note) and the log of resolved ones (with reopen).
 async function openConflicts() {

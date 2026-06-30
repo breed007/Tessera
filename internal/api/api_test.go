@@ -12,6 +12,7 @@ import (
 
 	"github.com/tessera/tessera/internal/account"
 	"github.com/tessera/tessera/internal/config"
+	"github.com/tessera/tessera/internal/entity"
 	"github.com/tessera/tessera/internal/observation"
 	"github.com/tessera/tessera/internal/reconcile"
 	"github.com/tessera/tessera/internal/secret"
@@ -221,6 +222,67 @@ func TestDeleteArtifact(t *testing.T) {
 	bad.Body.Close()
 	if bad.StatusCode != 400 {
 		t.Errorf("unknown kind → %d, want 400", bad.StatusCode)
+	}
+}
+
+func TestCreateHost(t *testing.T) {
+	ts := setup(t)
+	// Bad MAC → 400.
+	bad := authPost(t, ts.URL+"/api/host/create", map[string]any{"mac": "nope"})
+	bad.Body.Close()
+	if bad.StatusCode != 400 {
+		t.Fatalf("bad mac → %d, want 400", bad.StatusCode)
+	}
+	r := authPost(t, ts.URL+"/api/host/create", map[string]any{
+		"mac": "de:ad:be:ef:00:01", "ip": "10.0.0.250", "display_name": "Planned NAS", "device_class": "NAS",
+	})
+	if r.StatusCode != 200 {
+		t.Fatalf("create host → %d", r.StatusCode)
+	}
+	var resp struct {
+		StableID string `json:"stable_id"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&resp)
+	r.Body.Close()
+	if resp.StableID != "mac:de:ad:be:ef:00:01" {
+		t.Fatalf("stable_id = %q", resp.StableID)
+	}
+	detail := getJSON[HostDetail](t, ts.URL+"/api/host?id="+resp.StableID)
+	if detail.Host.DisplayName != "Planned NAS" || !detail.Host.IsExpected {
+		t.Errorf("created host wrong: %+v", detail.Host)
+	}
+	hasIP := false
+	for _, a := range detail.Addresses {
+		if a.IP == "10.0.0.250" {
+			hasIP = true
+		}
+	}
+	if !hasIP {
+		t.Errorf("created host should own 10.0.0.250: %+v", detail.Addresses)
+	}
+}
+
+func TestCreateSubnet(t *testing.T) {
+	ts := setup(t)
+	bad := authPost(t, ts.URL+"/api/subnet/create", map[string]any{"cidr": "not-a-cidr"})
+	bad.Body.Close()
+	if bad.StatusCode != 400 {
+		t.Fatalf("bad cidr → %d, want 400", bad.StatusCode)
+	}
+	r := authPost(t, ts.URL+"/api/subnet/create", map[string]any{"cidr": "192.168.50.0/24", "name": "IoT"})
+	r.Body.Close()
+	if r.StatusCode != 200 {
+		t.Fatalf("create subnet → %d", r.StatusCode)
+	}
+	subnets := getJSON[[]entity.Subnet](t, ts.URL+"/api/subnets")
+	found := false
+	for _, s := range subnets {
+		if s.CIDR == "192.168.50.0/24" && s.Name == "IoT" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("created subnet not found: %+v", subnets)
 	}
 }
 

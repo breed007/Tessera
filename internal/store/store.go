@@ -125,6 +125,9 @@ type AvailabilityStore interface {
 	AppendAvailability(ctx context.Context, events []entity.AvailabilityEvent) error
 	// AvailabilityForHost returns a host's transition events, oldest first.
 	AvailabilityForHost(ctx context.Context, stableID string) ([]entity.AvailabilityEvent, error)
+	// AllAvailability returns every host's transition events, oldest first — used
+	// to reconstruct the network-wide online-count timeline.
+	AllAvailability(ctx context.Context) ([]entity.AvailabilityEvent, error)
 }
 
 // MergeStore persists operator "these hosts are the same device" links, folded

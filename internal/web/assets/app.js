@@ -90,6 +90,58 @@ async function refresh() {
     getJSON("/api/summary"), getJSON("/api/hosts"),
   ]);
   renderSummary(summary); renderHosts(hosts); renderDevices(hosts, summary.open_conflicts);
+  renderTrends();
+}
+
+// ── trend charts (hand-rolled SVG, no deps) ──────────────────────────────────
+// sparkLine draws a filled line chart from [{t,v}] points into a viewBox.
+function sparkLine(points, opts) {
+  const o = Object.assign({ w: 300, h: 90, pad: 6, color: "var(--accent)", fmt: (v) => v }, opts || {});
+  if (!points || points.length === 0) return `<div class="chart-empty">no data yet</div>`;
+  const xs = points.map((p) => new Date(p.t).getTime());
+  const ys = points.map((p) => p.v);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y1 = Math.max(...ys, 1);
+  const W = o.w, H = o.h, P = o.pad;
+  const sx = (x) => x1 === x0 ? W / 2 : P + (x - x0) / (x1 - x0) * (W - 2 * P);
+  const sy = (y) => H - P - (y / y1) * (H - 2 * P);
+  // A single point: render a flat line.
+  const pts = points.length === 1 ? [{ x: P, y: sy(ys[0]) }, { x: W - P, y: sy(ys[0]) }] : points.map((p, i) => ({ x: sx(xs[i]), y: sy(ys[i]) }));
+  const line = pts.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  const area = `${line} L${pts[pts.length - 1].x.toFixed(1)},${H - P} L${pts[0].x.toFixed(1)},${H - P} Z`;
+  const last = ys[ys.length - 1];
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    <path d="${area}" fill="${o.color}" opacity="0.12"/>
+    <path d="${line}" fill="none" stroke="${o.color}" stroke-width="2"/>
+    <circle cx="${pts[pts.length - 1].x.toFixed(1)}" cy="${pts[pts.length - 1].y.toFixed(1)}" r="3" fill="${o.color}"/>
+  </svg><div class="chart-foot"><span>${o.fmt(ys[0])}</span><b>${o.fmt(last)}</b></div>`;
+}
+
+// utilBars draws horizontal utilization bars for subnets.
+function utilBars(subnets) {
+  if (!subnets || !subnets.length) return `<div class="chart-empty">no subnets</div>`;
+  return `<div class="ubars">${subnets.slice(0, 8).map((s) => {
+    const pct = Math.round((s.utilization || 0) * 100);
+    const col = pct >= 90 ? "var(--absent)" : pct >= 75 ? "#e0a23c" : "var(--accent)";
+    return `<div class="ubar"><span class="ubar-l mono">${esc(s.name || s.cidr)}</span>
+      <span class="ubar-track"><span class="ubar-fill" style="width:${s.total ? pct : 0}%;background:${col}"></span></span>
+      <span class="ubar-v">${s.total ? pct + "%" : "—"} <span class="muted-note">(${s.used}${s.total ? "/" + s.total : ""})</span></span></div>`;
+  }).join("")}</div>`;
+}
+
+async function renderTrends() {
+  const sec = $("trends-section");
+  if (!sec) return;
+  let d;
+  try { d = await getJSON("/api/trends"); } catch { sec.classList.add("hidden"); return; }
+  const growth = d.device_growth || [], avail = d.availability || [], subnets = d.subnets || [];
+  // Only surface the panel once there's something to show.
+  if (growth.length === 0 && avail.length === 0 && subnets.length === 0) { sec.classList.add("hidden"); return; }
+  sec.classList.remove("hidden");
+  $("trends-body").innerHTML = `<div class="charts">
+    <div class="chart-card"><h3>Devices over time</h3>${sparkLine(growth, { color: "var(--accent)" })}</div>
+    <div class="chart-card"><h3>Online devices</h3>${sparkLine(avail, { color: "#4aa3ff" })}</div>
+    <div class="chart-card"><h3>Subnet utilization</h3>${utilBars(subnets)}</div>
+  </div>`;
 }
 function renderSummary(s) {
   const stat = (n, l, d) => `<div class="stat" data-drill="${d}"><b>${n}</b><span>${l}</span></div>`;

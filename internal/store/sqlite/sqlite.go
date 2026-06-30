@@ -959,6 +959,28 @@ func (s *Store) AvailabilityForHost(ctx context.Context, stableID string) ([]ent
 	return out, rows.Err()
 }
 
+// AllAvailability returns every host's transition events, oldest first.
+func (s *Store) AllAvailability(ctx context.Context) ([]entity.AvailabilityEvent, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT stable_id, online, at FROM availability_events ORDER BY at ASC, id ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []entity.AvailabilityEvent
+	for rows.Next() {
+		var e entity.AvailabilityEvent
+		var online int
+		var at string
+		if err := rows.Scan(&e.StableID, &online, &at); err != nil {
+			return nil, err
+		}
+		e.Online = online != 0
+		e.At, _ = parseTime(at)
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 // LastSeenBySubject returns the newest non-manual observation time per subject —
 // i.e. how recently each device was actually seen on the network (manual
 // annotations are excluded so a hand-edited name doesn't keep a gone device alive).

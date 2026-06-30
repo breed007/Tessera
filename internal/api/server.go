@@ -158,6 +158,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/status", s.handleStatus)
 	mux.HandleFunc("GET /api/version", s.handleVersion)
 	mux.HandleFunc("GET /api/metrics", s.handleMetrics)
+	mux.HandleFunc("GET /api/trends", s.handleTrends)
 
 	// Export.
 	mux.HandleFunc("GET /api/exports", s.handleExportList)

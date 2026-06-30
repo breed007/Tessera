@@ -37,6 +37,7 @@ type HostDetail struct {
 	Observations []ObservationView  `json:"observations"`
 	Changes      []ChangeView       `json:"changes"`
 	Availability *AvailabilityView  `json:"availability,omitempty"`
+	MergedFrom   []string           `json:"merged_from,omitempty"` // identities this host has absorbed
 }
 
 // ChangeView is one meaningful change derived from the observation history — the
@@ -163,6 +164,9 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 	detail.Changes = computeChanges(obs)
 	if evs, err := s.store.AvailabilityForHost(r.Context(), host.StableID); err == nil {
 		detail.Availability = buildAvailability(evs, time.Now().UTC())
+	}
+	if ms, err := s.store.ListMerges(r.Context()); err == nil {
+		detail.MergedFrom = mergedInto(ms, host.StableID)
 	}
 	writeJSON(w, http.StatusOK, detail)
 }

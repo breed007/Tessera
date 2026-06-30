@@ -27,6 +27,53 @@ func newStore(t *testing.T) store.Store {
 	return st
 }
 
+func TestHostMerge(t *testing.T) {
+	st := newStore(t)
+	ctx := context.Background()
+	sink := observation.NewSink("seed", st)
+	rec := func(sty observation.SubjectType, subj string, a observation.Attribute, v string) {
+		if _, err := sink.Record(ctx, observation.SourcePassiveARP, sty, subj, a, v, 90, observation.At(testT0)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Two separate identities, no shared binding: a MAC host and an IP-only host.
+	rec(observation.SubjectMAC, "aa:bb:cc:00:00:01", observation.AttrHostname, "laptop")
+	rec(observation.SubjectIPv6, "fe80::1", observation.AttrLiveness, "up") // ip-only host "ip:fe80::1"
+
+	base, err := New(st, nil, testParams()).Rebuild(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if base.Hosts != 2 {
+		t.Fatalf("pre-merge hosts = %d, want 2", base.Hosts)
+	}
+	// Merge the ip-only host into the MAC host.
+	if err := st.SetMerge(ctx, entity.HostMerge{Secondary: "ip:fe80::1", Primary: "mac:aa:bb:cc:00:00:01"}); err != nil {
+		t.Fatal(err)
+	}
+	after, err := New(st, nil, testParams()).Rebuild(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Hosts != 1 {
+		t.Fatalf("post-merge hosts = %d, want 1", after.Hosts)
+	}
+	snap, _ := st.LoadEntities(ctx)
+	if snap.Hosts[0].StableID != "mac:aa:bb:cc:00:00:01" {
+		t.Errorf("surviving host = %q, want the MAC primary", snap.Hosts[0].StableID)
+	}
+	// The merged host now owns the IPv6 address.
+	var hasV6 bool
+	for _, a := range snap.Addresses {
+		if a.IP == "fe80::1" {
+			hasV6 = true
+		}
+	}
+	if !hasV6 {
+		t.Errorf("merged host should own fe80::1: %+v", snap.Addresses)
+	}
+}
+
 func TestDHCPLeaseFold(t *testing.T) {
 	st := newStore(t)
 	ctx := context.Background()

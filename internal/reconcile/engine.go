@@ -33,6 +33,10 @@ type engine struct {
 	now    time.Time
 	params Params
 
+	// operator merge links: secondary stable_id -> primary stable_id. Applied when
+	// deriving a host key so both identities fold into one host (§ host merge).
+	merges map[string]string
+
 	// first-pass identity resolution
 	ownerCand map[string]*resolver // ip -> candidate ip_binding observations (value = mac)
 
@@ -91,6 +95,7 @@ func newEngine(now time.Time, p Params) *engine {
 	return &engine{
 		now:       now,
 		params:    p,
+		merges:    map[string]string{},
 		ownerCand: map[string]*resolver{},
 		hosts:     map[string]*hostAcc{},
 		ifaces:    map[string]*ifaceAcc{},
@@ -143,14 +148,28 @@ func (e *engine) currentOwner(ip string) (string, bool) {
 func (e *engine) hostKeyFor(obs observation.Observation) (string, bool) {
 	switch obs.SubjectType {
 	case observation.SubjectMAC:
-		return "mac:" + obs.Subject, true
+		return e.canonical("mac:" + obs.Subject), true
 	case observation.SubjectIPv4, observation.SubjectIPv6:
 		if mac, ok := e.currentOwner(obs.Subject); ok {
-			return "mac:" + mac, true
+			return e.canonical("mac:" + mac), true
 		}
-		return "ip:" + obs.Subject, true
+		return e.canonical("ip:" + obs.Subject), true
 	default:
 		return "", false
+	}
+}
+
+// canonical follows operator merge links (secondary → primary) so merged
+// identities resolve to one host. Guards against cycles and self-links.
+func (e *engine) canonical(key string) string {
+	seen := map[string]bool{}
+	for {
+		next, ok := e.merges[key]
+		if !ok || next == "" || next == key || seen[key] {
+			return key
+		}
+		seen[key] = true
+		key = next
 	}
 }
 

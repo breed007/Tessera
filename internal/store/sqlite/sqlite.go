@@ -757,11 +757,49 @@ func (s *Store) ForgetSubjects(ctx context.Context, stableID string, subjects []
 		if _, err := tx.ExecContext(ctx, `DELETE FROM availability_events WHERE stable_id=?`, stableID); err != nil {
 			return 0, fmt.Errorf("sqlite: forget availability: %w", err)
 		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM host_merges WHERE secondary=? OR primary_id=?`, stableID, stableID); err != nil {
+			return 0, fmt.Errorf("sqlite: forget merges: %w", err)
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
 	return removed, nil
+}
+
+// ListMerges returns all host-merge links.
+func (s *Store) ListMerges(ctx context.Context) ([]entity.HostMerge, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT secondary, primary_id, created_at, created_by FROM host_merges ORDER BY created_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []entity.HostMerge
+	for rows.Next() {
+		var m entity.HostMerge
+		var at string
+		if err := rows.Scan(&m.Secondary, &m.Primary, &at, &m.CreatedBy); err != nil {
+			return nil, err
+		}
+		m.CreatedAt, _ = parseTime(at)
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// SetMerge upserts a merge link.
+func (s *Store) SetMerge(ctx context.Context, m entity.HostMerge) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO host_merges (secondary, primary_id, created_at, created_by)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(secondary) DO UPDATE SET primary_id=excluded.primary_id, created_at=excluded.created_at, created_by=excluded.created_by`,
+		m.Secondary, m.Primary, ft(m.CreatedAt), m.CreatedBy)
+	return err
+}
+
+// DeleteMerge removes a merge link (split).
+func (s *Store) DeleteMerge(ctx context.Context, secondary string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM host_merges WHERE secondary=?`, secondary)
+	return err
 }
 
 // DeleteObservation removes one observation row by id.

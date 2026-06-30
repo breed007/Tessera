@@ -224,6 +224,43 @@ func TestDeleteArtifact(t *testing.T) {
 	}
 }
 
+func TestMergeHosts(t *testing.T) {
+	ts := setup(t)
+	// setup() seeds one host (mac:b8:27:eb:11:22:33). Self-merge is rejected.
+	bad := authPost(t, ts.URL+"/api/host/merge", map[string]any{"primary": "mac:b8:27:eb:11:22:33", "secondary": "mac:b8:27:eb:11:22:33"})
+	bad.Body.Close()
+	if bad.StatusCode != 400 {
+		t.Fatalf("self-merge → %d, want 400", bad.StatusCode)
+	}
+	// Merge a (currently-nonexistent) identity into the host; it's recorded and
+	// surfaced as merged_from on the primary.
+	r := authPost(t, ts.URL+"/api/host/merge", map[string]any{"primary": "mac:b8:27:eb:11:22:33", "secondary": "ip:10.9.9.9"})
+	if r.StatusCode != 200 {
+		t.Fatalf("merge → %d", r.StatusCode)
+	}
+	r.Body.Close()
+	detail := getJSON[HostDetail](t, ts.URL+"/api/host?id=mac:b8:27:eb:11:22:33")
+	found := false
+	for _, s := range detail.MergedFrom {
+		if s == "ip:10.9.9.9" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("merged_from = %v, want it to contain ip:10.9.9.9", detail.MergedFrom)
+	}
+	// Split it back out.
+	u := authPost(t, ts.URL+"/api/host/unmerge", map[string]any{"secondary": "ip:10.9.9.9"})
+	u.Body.Close()
+	if u.StatusCode != 200 {
+		t.Fatalf("unmerge → %d", u.StatusCode)
+	}
+	d2 := getJSON[HostDetail](t, ts.URL+"/api/host?id=mac:b8:27:eb:11:22:33")
+	if len(d2.MergedFrom) != 0 {
+		t.Errorf("after split, merged_from = %v, want empty", d2.MergedFrom)
+	}
+}
+
 func TestTagsRoundTrip(t *testing.T) {
 	ts := setup(t)
 	// Multiple tags; whitespace + an embedded comma should be normalized away.

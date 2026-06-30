@@ -169,6 +169,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/host/rescan", s.handleRescanHost)
 	mux.HandleFunc("POST /api/host/forget", s.handleForgetHost)
 	mux.HandleFunc("POST /api/host/delete-artifact", s.handleDeleteArtifact)
+	mux.HandleFunc("POST /api/host/merge", s.handleMergeHosts)
+	mux.HandleFunc("POST /api/host/unmerge", s.handleUnmergeHost)
 	mux.HandleFunc("POST /api/subnet/rescan", s.handleRescanSubnet)
 	mux.HandleFunc("POST /api/conflict/resolve", s.handleResolveConflict)
 	mux.HandleFunc("POST /api/conflict/reopen", s.handleReopenConflict)

@@ -127,6 +127,14 @@ type AvailabilityStore interface {
 	AvailabilityForHost(ctx context.Context, stableID string) ([]entity.AvailabilityEvent, error)
 }
 
+// MergeStore persists operator "these hosts are the same device" links, folded
+// into reconciliation by canonicalizing host keys.
+type MergeStore interface {
+	ListMerges(ctx context.Context) ([]entity.HostMerge, error)
+	SetMerge(ctx context.Context, m entity.HostMerge) error
+	DeleteMerge(ctx context.Context, secondary string) error
+}
+
 // Store is the full persistence surface handed to the app at startup.
 type Store interface {
 	ObservationLog
@@ -135,6 +143,7 @@ type Store interface {
 	SecuritySuppressionStore
 	ForgetStore
 	AvailabilityStore
+	MergeStore
 	Migrate(ctx context.Context) error
 	Close() error
 }

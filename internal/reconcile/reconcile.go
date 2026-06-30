@@ -93,6 +93,15 @@ func (r *Reconciler) Rebuild(ctx context.Context) (Stats, error) {
 
 	eng := newEngine(r.params.Now().UTC(), r.params)
 
+	// Operator merge links fold one host identity into another (§ host merge).
+	if merges, err := r.store.ListMerges(ctx); err != nil {
+		return Stats{}, err
+	} else {
+		for _, m := range merges {
+			eng.merges[m.Secondary] = m.Primary
+		}
+	}
+
 	// Pass 1: ip_binding ownership.
 	if err := r.store.Each(ctx, 0, func(obs observation.Observation) error {
 		eng.observeBinding(obs)

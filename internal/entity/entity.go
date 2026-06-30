@@ -150,6 +150,17 @@ func (s SecuritySuppression) Active(now time.Time) bool {
 	return s.ExpiresAt == nil || now.Before(*s.ExpiresAt)
 }
 
+// HostMerge is an operator decision that two host identities are the same device:
+// the Secondary stable_id folds into the Primary during reconciliation (the
+// reconciler canonicalizes host keys through these links — append-safe, no log
+// rewrite). Split = delete the link.
+type HostMerge struct {
+	Secondary string    `json:"secondary"`
+	Primary   string    `json:"primary"`
+	CreatedAt time.Time `json:"created_at"`
+	CreatedBy string    `json:"created_by,omitempty"`
+}
+
 // AvailabilityEvent records an online/offline transition for a host (online =
 // has at least one active address). Appended only when the state flips, so the
 // table is bounded by transitions, not time.

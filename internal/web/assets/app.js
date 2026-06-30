@@ -753,6 +753,14 @@ async function openHost(id) {
 
   const actions = me.is_admin ? `<div class="detail-actions"><button id="rescan-host" class="ghost" title="Actively probe this host's addresses now">↻ Rescan host</button><button id="forget-host" class="ghost danger" title="Delete all history and let it be rediscovered">⌫ Forget</button></div>` : "";
 
+  const otherHosts = (hostsData || []).filter((x) => x.stable_id !== h.stable_id)
+    .map((x) => `<option value="${esc(x.stable_id)}">${esc(x.display_name || x.stable_id)}${(x.ips || [])[0] ? " · " + esc(x.ips[0]) : ""}</option>`).join("");
+  const mergeUI = isAdmin ? `
+    <h3>Merge</h3>
+    ${(d.merged_from || []).length ? `<div class="merged-list">${d.merged_from.map((s) => `<div class="mono art-row">absorbed ${esc(s)} <button class="ghost unmerge" data-sec="${esc(s)}">↩ Split</button></div>`).join("")}</div>` : ""}
+    <div class="merge-ctl"><select id="merge-target"><option value="">Merge another device into this one…</option>${otherHosts}</select><button class="ghost" id="merge-btn">Merge</button></div>
+    <p class="muted-note">Use when two records are really the same physical device (dual-stack, randomized MAC, or an IP seen before its MAC). The selected device folds into this one; Split undoes it.</p>` : "";
+
   $("detail-body").innerHTML = `
     <h2><span class="dev-icon-lg" style="${iconStyle(d.icon_url, "var(--accent)")}"></span>${esc(h.display_name || "(unnamed)")}</h2>
     ${actions}
@@ -772,6 +780,7 @@ async function openHost(id) {
     <h3>Interfaces</h3>${ifaces}<h3>Addresses</h3>${addrs}<h3>Services</h3>${svcs}<h3>Topology</h3>${topo}
     ${iconPicker}
     ${annotate}
+    ${mergeUI}
     ${(d.changes || []).length ? `<h3>Changes <span class="badge">${d.changes.length}</span></h3><div class="changes">${changes}</div>` : ""}
     <h3>Observation history <span class="badge">${(d.observations || []).length}</span></h3>
     <table class="obs"><tbody>${rows}</tbody></table>`;
@@ -810,6 +819,20 @@ async function openHost(id) {
           toast(`Removed ${r.observations_removed} record(s)`);
           openHost(id); refresh();
         } catch (err) { toast(err.message); }
+      };
+    }
+    const mb = $("merge-btn");
+    if (mb) mb.onclick = async () => {
+      const sec = $("merge-target").value;
+      if (!sec) return;
+      if (!confirm(`Merge that device into “${h.display_name || h.stable_id}”? They'll be treated as one device.`)) return;
+      try { await post("/api/host/merge", { primary: h.stable_id, secondary: sec }); toast("Merged"); openHost(id); refresh(); }
+      catch (err) { toast(err.message); }
+    };
+    for (const b of $("detail-body").querySelectorAll(".unmerge")) {
+      b.onclick = async () => {
+        try { await post("/api/host/unmerge", { secondary: b.dataset.sec }); toast("Split"); openHost(id); refresh(); }
+        catch (err) { toast(err.message); }
       };
     }
   }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/tessera/tessera/internal/entity"
 	"github.com/tessera/tessera/internal/observation"
+	"github.com/tessera/tessera/internal/store"
 )
 
 func TestForgetSubjects(t *testing.T) {
@@ -62,6 +63,51 @@ func TestForgetSubjects(t *testing.T) {
 	}
 	if rs, _ := st.ListResolutions(ctx); len(rs) != 0 {
 		t.Errorf("resolution should be cleared: %+v", rs)
+	}
+}
+
+func TestDeleteObservations(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(filepath.Join(t.TempDir(), "del.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t0 := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	add := func(sty observation.SubjectType, subj string, a observation.Attribute, v string) int64 {
+		id, err := st.Append(ctx, observation.Observation{
+			ObservedAt: t0, Source: observation.SourceActiveTCP, CollectorID: "x",
+			SubjectType: sty, Subject: subj, Attribute: a, Value: v, Confidence: 80,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	id := add(observation.SubjectIPv4, "10.0.0.5", observation.AttrOpenPort, "tcp/23")
+	add(observation.SubjectIPv4, "10.0.0.5", observation.AttrOpenPort, "tcp/443")
+	add(observation.SubjectIPv4, "10.0.0.5", observation.AttrServiceBanner, "tcp/23|telnetd")
+	add(observation.SubjectMAC, "aa:bb:cc:00:00:01", observation.AttrIPBinding, "10.0.0.5")
+
+	// Empty filter is refused.
+	if _, err := st.DeleteObservations(ctx, store.ObsDeleteFilter{}); err == nil {
+		t.Fatal("empty filter should be refused")
+	}
+	// Delete one observation by id.
+	if n, err := st.DeleteObservation(ctx, id); err != nil || n != 1 {
+		t.Fatalf("DeleteObservation = %d,%v want 1,nil", n, err)
+	}
+	// Delete a service: the tcp/443 open_port + (via prefix) its banners.
+	add(observation.SubjectIPv4, "10.0.0.5", observation.AttrServiceBanner, "tcp/443|nginx")
+	if n, err := st.DeleteObservations(ctx, store.ObsDeleteFilter{Subject: "10.0.0.5", Attribute: string(observation.AttrServiceBanner), ValuePrefix: "tcp/443|"}); err != nil || n != 1 {
+		t.Fatalf("banner prefix delete = %d,%v want 1,nil", n, err)
+	}
+	// Delete the binding by value (all MACs pointing at the IP).
+	if n, err := st.DeleteObservations(ctx, store.ObsDeleteFilter{Attribute: string(observation.AttrIPBinding), Value: "10.0.0.5"}); err != nil || n != 1 {
+		t.Fatalf("binding value delete = %d,%v want 1,nil", n, err)
 	}
 }
 

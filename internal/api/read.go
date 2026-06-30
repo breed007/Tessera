@@ -50,6 +50,7 @@ type ChangeView struct {
 
 // ObservationView is one log entry behind an entity (provenance, §1).
 type ObservationView struct {
+	ID         int64     `json:"id"`
 	ObservedAt time.Time `json:"observed_at"`
 	Source     string    `json:"source"`
 	Subject    string    `json:"subject"`
@@ -155,7 +156,7 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 	obs, _ := s.store.ForSubjects(r.Context(), dedupe(subjects))
 	for _, o := range obs {
 		detail.Observations = append(detail.Observations, ObservationView{
-			ObservedAt: o.ObservedAt, Source: string(o.Source), Subject: o.Subject,
+			ID: o.ID, ObservedAt: o.ObservedAt, Source: string(o.Source), Subject: o.Subject,
 			Attribute: string(o.Attribute), Value: o.Value, Confidence: o.Confidence,
 		})
 	}

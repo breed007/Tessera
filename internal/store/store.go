@@ -96,6 +96,24 @@ type ForgetStore interface {
 	// LastSeenBySubject returns the newest non-manual observation time per
 	// subject — the "last seen on the network" signal used by auto-prune.
 	LastSeenBySubject(ctx context.Context) (map[string]time.Time, error)
+	// DeleteObservation removes one log row by id (surgical artifact removal).
+	DeleteObservation(ctx context.Context, id int64) (removed int64, err error)
+	// DeleteObservations removes log rows matching a filter (e.g. all bindings of
+	// one IP, or a single host's open-port). At least one filter field must be set.
+	DeleteObservations(ctx context.Context, f ObsDeleteFilter) (removed int64, err error)
+}
+
+// ObsDeleteFilter selects observations to delete; set fields are AND-combined,
+// and at least one must be non-empty (deleting the whole log is refused).
+type ObsDeleteFilter struct {
+	Subject     string // exact subject
+	Attribute   string // exact attribute
+	Value       string // exact value
+	ValuePrefix string // value LIKE prefix% (e.g. "tcp/443|" for a port's banners)
+}
+
+func (f ObsDeleteFilter) Empty() bool {
+	return f.Subject == "" && f.Attribute == "" && f.Value == "" && f.ValuePrefix == ""
 }
 
 // AvailabilityStore persists device online/offline history (one row per

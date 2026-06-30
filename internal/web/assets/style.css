@@ -265,6 +265,11 @@ table.obs.full td { word-break: break-word; }
 .avail-events { border-top: 1px solid var(--hairline); padding-top: 6px; max-height: 160px; overflow-y: auto; }
 /* DHCP-reserved address cell: a small ring marker over the state color. */
 .ipcell.dhcp-res { box-shadow: inset 0 0 0 2px var(--accent); }
+/* Surgical artifact delete (✕) on interface/address/service/observation rows. */
+.art-row { display: flex; align-items: center; gap: 6px; }
+.art-del { margin-left: auto; background: transparent; border: none; color: var(--faint); cursor: pointer; font-size: 12px; line-height: 1; padding: 2px 5px; border-radius: 3px; }
+.art-del:hover { color: var(--absent); background: color-mix(in srgb, var(--absent) 12%, transparent); }
+td .art-del { margin-left: 0; }
 /* Tags */
 .tag-chip { display: inline-block; font-size: 10px; line-height: 1.6; padding: 0 8px; border-radius: 10px; color: var(--tc, var(--accent)); border: 1px solid var(--tc, var(--accent-dim)); white-space: nowrap; }
 .tag-chip.click { cursor: pointer; }

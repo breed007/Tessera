@@ -764,6 +764,56 @@ func (s *Store) ForgetSubjects(ctx context.Context, stableID string, subjects []
 	return removed, nil
 }
 
+// DeleteObservation removes one observation row by id.
+func (s *Store) DeleteObservation(ctx context.Context, id int64) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM observations WHERE id=?`, id)
+	if err != nil {
+		return 0, fmt.Errorf("sqlite: delete observation: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
+// DeleteObservations removes observation rows matching the filter (AND-combined).
+// Refuses an empty filter so the whole log can't be wiped by accident.
+func (s *Store) DeleteObservations(ctx context.Context, f store.ObsDeleteFilter) (int64, error) {
+	if f.Empty() {
+		return 0, fmt.Errorf("sqlite: refusing empty observation-delete filter")
+	}
+	var where []string
+	var args []any
+	if f.Subject != "" {
+		where = append(where, "subject=?")
+		args = append(args, f.Subject)
+	}
+	if f.Attribute != "" {
+		where = append(where, "attribute=?")
+		args = append(args, f.Attribute)
+	}
+	if f.Value != "" {
+		where = append(where, "value=?")
+		args = append(args, f.Value)
+	}
+	if f.ValuePrefix != "" {
+		where = append(where, `value LIKE ? ESCAPE '\'`)
+		args = append(args, escapeLike(f.ValuePrefix)+"%")
+	}
+	res, err := s.db.ExecContext(ctx, `DELETE FROM observations WHERE `+strings.Join(where, " AND "), args...)
+	if err != nil {
+		return 0, fmt.Errorf("sqlite: delete observations: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
+// escapeLike escapes LIKE wildcards so a literal prefix matches literally.
+func escapeLike(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "%", "\\%")
+	s = strings.ReplaceAll(s, "_", "\\_")
+	return s
+}
+
 // LatestAvailability returns the most recent online state per host (stable_id).
 func (s *Store) LatestAvailability(ctx context.Context) (map[string]bool, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT a.stable_id, a.online FROM availability_events a

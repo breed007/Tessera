@@ -702,10 +702,15 @@ async function openConflicts() {
 async function openHost(id) {
   const d = await getJSON("/api/host?id=" + encodeURIComponent(id));
   const h = d.host;
-  const rows = (d.observations || []).map((o) => `<tr><td>${fmtTime(o.observed_at)}</td><td class="src">${esc(o.source)}</td><td>${esc(o.attribute)}</td><td>${esc(o.value)}</td><td class="conf">${o.confidence}</td></tr>`).join("");
-  const ifaces = (d.interfaces || []).map((i) => `<div class="mono">${esc(i.mac)} ${i.is_randomized ? "· randomized" : ""} ${i.oui_vendor ? "· " + esc(i.oui_vendor) : ""}</div>`).join("") || "—";
-  const addrs = (d.addresses || []).map((a) => `<div class="mono">${esc(a.ip)} <span class="conf">[${esc(a.state)}]</span>${a.dhcp ? ` <span class="conf">DHCP ${esc(a.dhcp)}</span>` : ""}</div>`).join("") || "—";
-  const svcs = (d.services || []).map((s) => `<div class="mono">${esc(s.proto)}/${s.port} ${s.banner ? "· " + esc(s.banner) : ""}</div>`).join("") || "—";
+  const isAdmin = me.is_admin;
+  const xbtn = (attrs) => isAdmin ? `<button class="art-del" ${attrs} title="Delete this artifact (removes its stored observations)">✕</button>` : "";
+  const ipById = {};
+  (d.addresses || []).forEach((a) => { ipById[a.id] = a.ip; });
+  const primaryIP = (d.addresses || [])[0] ? d.addresses[0].ip : "";
+  const rows = (d.observations || []).map((o) => `<tr><td>${fmtTime(o.observed_at)}</td><td class="src">${esc(o.source)}</td><td>${esc(o.attribute)}</td><td>${esc(o.value)}</td><td class="conf">${o.confidence}</td>${isAdmin ? `<td>${xbtn(`data-kind="observation" data-id="${o.id}"`)}</td>` : ""}</tr>`).join("");
+  const ifaces = (d.interfaces || []).map((i) => `<div class="mono art-row">${esc(i.mac)} ${i.is_randomized ? "· randomized" : ""} ${i.oui_vendor ? "· " + esc(i.oui_vendor) : ""}${xbtn(`data-kind="interface" data-mac="${esc(i.mac)}"`)}</div>`).join("") || "—";
+  const addrs = (d.addresses || []).map((a) => `<div class="mono art-row">${esc(a.ip)} <span class="conf">[${esc(a.state)}]</span>${a.dhcp ? ` <span class="conf">DHCP ${esc(a.dhcp)}</span>` : ""}${xbtn(`data-kind="address" data-ip="${esc(a.ip)}"`)}</div>`).join("") || "—";
+  const svcs = (d.services || []).map((s) => `<div class="mono art-row">${esc(s.proto)}/${s.port} ${s.banner ? "· " + esc(s.banner) : ""}${xbtn(`data-kind="service" data-ip="${esc(ipById[s.address_id] || primaryIP)}" data-proto="${esc(s.proto)}" data-port="${s.port}"`)}</div>`).join("") || "—";
   const topo = (d.topology || []).map((t) => `<div class="mono">${esc(t.switch)} port ${esc(t.switch_port)}</div>`).join("") || "—";
   const changeLabel = { ip: "IP", firmware: "Firmware", model: "Model", os: "OS", device: "Device", hostname: "Hostname", service: "Service" };
   const changes = (d.changes || []).map((c) => {
@@ -790,6 +795,23 @@ async function openHost(id) {
     };
     const fb = $("forget-host");
     if (fb) fb.onclick = () => forgetDevice(h.stable_id, h.display_name);
+    for (const b of $("detail-body").querySelectorAll(".art-del")) {
+      b.onclick = async (e) => {
+        e.stopPropagation();
+        const k = b.dataset.kind;
+        if (!confirm(`Delete this ${k}?\n\nThis removes its stored observations. If it's still live on the network it will be re-observed on the next scan.`)) return;
+        const body = { stable_id: h.stable_id, kind: k };
+        if (k === "observation") body.id = +b.dataset.id;
+        else if (k === "address") body.ip = b.dataset.ip;
+        else if (k === "interface") body.mac = b.dataset.mac;
+        else if (k === "service") { body.ip = b.dataset.ip; body.proto = b.dataset.proto; body.port = +b.dataset.port; }
+        try {
+          const r = await post("/api/host/delete-artifact", body);
+          toast(`Removed ${r.observations_removed} record(s)`);
+          openHost(id); refresh();
+        } catch (err) { toast(err.message); }
+      };
+    }
   }
   openPanel("detail");
 }

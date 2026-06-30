@@ -186,6 +186,44 @@ func TestForgetHost(t *testing.T) {
 	}
 }
 
+func TestDeleteArtifact(t *testing.T) {
+	ts := setup(t)
+	// Seed a service on the host's IP via a rescan-style observation isn't available
+	// here, so use the address artifact: the seeded host has IP 10.0.0.20.
+	before := getJSON[HostDetail](t, ts.URL+"/api/host?id=mac:b8:27:eb:11:22:33")
+	if len(before.Addresses) == 0 {
+		t.Fatal("expected a seeded address")
+	}
+	// Delete the address artifact → its bindings go, host loses the IP.
+	r := authPost(t, ts.URL+"/api/host/delete-artifact", map[string]any{
+		"stable_id": "mac:b8:27:eb:11:22:33", "kind": "address", "ip": "10.0.0.20",
+	})
+	var resp struct {
+		OK      bool  `json:"ok"`
+		Removed int64 `json:"observations_removed"`
+	}
+	if r.StatusCode != 200 {
+		t.Fatalf("delete-artifact → %d", r.StatusCode)
+	}
+	_ = json.NewDecoder(r.Body).Decode(&resp)
+	r.Body.Close()
+	if !resp.OK || resp.Removed == 0 {
+		t.Fatalf("delete-artifact resp = %+v, want ok + >0 removed", resp)
+	}
+	after := getJSON[HostDetail](t, ts.URL+"/api/host?id=mac:b8:27:eb:11:22:33")
+	for _, a := range after.Addresses {
+		if a.IP == "10.0.0.20" {
+			t.Errorf("address 10.0.0.20 should be gone after delete")
+		}
+	}
+	// Unknown kind → 400.
+	bad := authPost(t, ts.URL+"/api/host/delete-artifact", map[string]any{"stable_id": "mac:b8:27:eb:11:22:33", "kind": "nope"})
+	bad.Body.Close()
+	if bad.StatusCode != 400 {
+		t.Errorf("unknown kind → %d, want 400", bad.StatusCode)
+	}
+}
+
 func TestTagsRoundTrip(t *testing.T) {
 	ts := setup(t)
 	// Multiple tags; whitespace + an embedded comma should be normalized away.

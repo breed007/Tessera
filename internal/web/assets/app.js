@@ -410,30 +410,52 @@ async function renderTopology(preserveView) {
   }).join("");
 
   $("topology-body").innerHTML = `<h2>Network topology</h2>
-    <div class="topo-toolbar"><button class="ghost" id="topo-fit">Fit</button><span class="muted-note">Drag to pan · scroll to zoom · click a device to open · ± collapses a subtree</span></div>
+    <div class="topo-toolbar">
+      <button class="ghost topo-zbtn" id="topo-zout" title="Zoom out">−</button>
+      <button class="ghost topo-zbtn" id="topo-zin" title="Zoom in">+</button>
+      <button class="ghost" id="topo-fit" title="Fit the whole map in view">Fit</button>
+      <span class="muted-note">Drag to pan · scroll or +/− to zoom · click a device to open · the ± on a node expands/collapses its branch</span>
+    </div>
     <div class="topo-canvas" id="topo-canvas"><svg id="topo-svg"><g id="topo-g"><g class="topo-edges">${edgeSVG}</g>${nodeSVG}</g></svg></div>
     ${unplaced.length ? `<details class="topo-unplaced"><summary>Unplaced devices <span class="badge">${unplaced.length}</span></summary>${unplaced.map((u) => `<div class="topo-row" data-id="${esc(u.stable_id)}"><span class="dev-icon" style="${iconStyle(u.icon_url, "var(--accent)")}"></span>${esc(u.name)}${u.sub ? ` <span class="topo-sub">${esc(u.sub)}</span>` : ""}</div>`).join("")}</details>` : ""}`;
 
   initTopoPan();
   const canvas = $("topo-canvas"), svg = $("topo-svg");
-  const fit = () => {
+  const clampZ = (s) => Math.max(0.25, Math.min(3, s));
+  // Fit: the whole map in view (overview, can be small for a big tree).
+  const fitAll = () => {
     const cw = canvas.clientWidth || 800, ch = canvas.clientHeight || 500;
-    let s = Math.min((cw - 48) / maxX, (ch - 48) / maxY, 1.3);
+    let s = clampZ(Math.min((cw - 48) / maxX, (ch - 48) / maxY, 1.3));
     if (!isFinite(s) || s <= 0) s = 1;
-    if (s < 0.5) s = 0.5; // floor: pan a wide tree instead of shrinking it to dust
     topoView = { scale: s, tx: Math.max(24, (cw - maxX * s) / 2), ty: 24 };
     topoApply();
   };
-  if (preserveView) topoApply(); else fit();
-  $("topo-fit").onclick = fit;
+  // Default: readable node size. Show everything only if it fits comfortably;
+  // otherwise keep nodes legible and let the user pan a wide tree.
+  const defaultView = () => {
+    const cw = canvas.clientWidth || 800, ch = canvas.clientHeight || 500;
+    const fitS = Math.min((cw - 48) / maxX, (ch - 48) / maxY, 1.3);
+    const s = clampZ(fitS >= 0.85 ? fitS : 0.95);
+    topoView = { scale: s, tx: maxX * s <= cw ? (cw - maxX * s) / 2 : 24, ty: 24 };
+    topoApply();
+  };
+  const zoomBy = (f) => {
+    const cw = canvas.clientWidth, ch = canvas.clientHeight, cx = cw / 2, cy = ch / 2;
+    const ns = clampZ(topoView.scale * f), k = ns / topoView.scale;
+    topoView = { scale: ns, tx: cx - (cx - topoView.tx) * k, ty: cy - (cy - topoView.ty) * k };
+    topoApply();
+  };
+  if (preserveView) topoApply(); else defaultView();
+  $("topo-fit").onclick = fitAll;
+  $("topo-zin").onclick = () => zoomBy(1.25);
+  $("topo-zout").onclick = () => zoomBy(0.8);
   svg.onmousedown = (e) => { if (!e.target.closest(".tnode")) topoDrag = { x: e.clientX, y: e.clientY, tx: topoView.tx, ty: topoView.ty }; };
   canvas.onwheel = (e) => {
     e.preventDefault();
-    const f = e.deltaY < 0 ? 1.1 : 0.9;
+    const f = e.deltaY < 0 ? 1.12 : 0.89;
     const r = canvas.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
-    topoView.tx = mx - (mx - topoView.tx) * f;
-    topoView.ty = my - (my - topoView.ty) * f;
-    topoView.scale *= f;
+    const ns = clampZ(topoView.scale * f), k = ns / topoView.scale;
+    topoView = { scale: ns, tx: mx - (mx - topoView.tx) * k, ty: my - (my - topoView.ty) * k };
     topoApply();
   };
   for (const el of canvas.querySelectorAll(".tnode[data-id]:not([data-id=''])")) {

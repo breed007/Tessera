@@ -324,8 +324,9 @@ td .art-del { margin-left: 0; }
 .tnode:hover { border-color: var(--accent); }
 .tnode .dev-icon { flex: 0 0 auto; }
 .tnode-text { display: flex; flex-direction: column; min-width: 0; }
-.tnode-name { font-weight: 700; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tnode-sub { color: var(--faint); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tnode-name { font-weight: 700; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tnode-sub { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.topo-zbtn { width: 30px; text-align: center; font-size: 15px; line-height: 1; padding: 5px 0; }
 .tnode-tog { flex: 0 0 auto; margin-left: auto; width: 18px; height: 18px; line-height: 15px; text-align: center; border: 1px solid var(--hairline); border-radius: 4px; background: var(--bg); color: var(--muted); cursor: pointer; font-size: 13px; padding: 0; }
 .tnode-tog:hover { border-color: var(--accent); color: var(--accent); }
 /* Trend charts */

@@ -176,6 +176,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/subnet/rescan", s.handleRescanSubnet)
 	mux.HandleFunc("POST /api/conflict/resolve", s.handleResolveConflict)
 	mux.HandleFunc("POST /api/conflict/reopen", s.handleReopenConflict)
+	mux.HandleFunc("POST /api/conflict/precedence", s.handleSetPrecedence)
 	mux.HandleFunc("POST /api/security/suppress", s.handleSuppressFinding)
 	mux.HandleFunc("POST /api/security/unsuppress", s.handleUnsuppressFinding)
 

@@ -63,6 +63,40 @@ func TestConflictProvenance(t *testing.T) {
 	}
 }
 
+func TestSourcePrecedence(t *testing.T) {
+	st := newStore(t)
+	ctx := context.Background()
+	sink := observation.NewSink("seed", st)
+	rec := func(src observation.Source, v string, c int) {
+		if _, err := sink.Record(ctx, src, observation.SubjectMAC, "aa:bb:cc:00:00:01", observation.AttrDeviceClass, v, c, observation.At(testT0)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Fingerbank says "computer" at higher confidence; UniFi says "NAS" lower.
+	rec(observation.SourceFingerbank, "computer", 88)
+	rec(observation.SourceUniFi, "NAS", 70)
+
+	// Without a policy, the higher-confidence value wins.
+	if _, err := New(st, nil, testParams()).Rebuild(ctx); err != nil {
+		t.Fatal(err)
+	}
+	snap, _ := st.LoadEntities(ctx)
+	if snap.Hosts[0].DeviceClass != "computer" {
+		t.Fatalf("no policy: device_class = %q, want computer", snap.Hosts[0].DeviceClass)
+	}
+	// With a policy preferring UniFi, the lower-confidence UniFi value wins.
+	if err := st.SetPrecedence(ctx, entity.SourcePrecedence{Attribute: "device_class", Source: "unifi"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New(st, nil, testParams()).Rebuild(ctx); err != nil {
+		t.Fatal(err)
+	}
+	snap, _ = st.LoadEntities(ctx)
+	if snap.Hosts[0].DeviceClass != "NAS" {
+		t.Errorf("with policy: device_class = %q, want NAS (UniFi preferred)", snap.Hosts[0].DeviceClass)
+	}
+}
+
 func TestHostMerge(t *testing.T) {
 	st := newStore(t)
 	ctx := context.Background()

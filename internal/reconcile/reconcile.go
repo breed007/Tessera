@@ -101,6 +101,14 @@ func (r *Reconciler) Rebuild(ctx context.Context) (Stats, error) {
 			eng.merges[m.Secondary] = m.Primary
 		}
 	}
+	// Source-precedence policy (attribute → preferred source).
+	if prec, err := r.store.ListPrecedence(ctx); err != nil {
+		return Stats{}, err
+	} else {
+		for _, p := range prec {
+			eng.precedence[p.Attribute] = p.Source
+		}
+	}
 
 	// Pass 1: ip_binding ownership.
 	if err := r.store.Each(ctx, 0, func(obs observation.Observation) error {

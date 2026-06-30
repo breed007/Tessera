@@ -805,6 +805,41 @@ func (s *Store) DeleteMerge(ctx context.Context, secondary string) error {
 	return err
 }
 
+// ListPrecedence returns all source-precedence rules.
+func (s *Store) ListPrecedence(ctx context.Context) ([]entity.SourcePrecedence, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT attribute, source, created_at, created_by FROM source_precedence ORDER BY attribute`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []entity.SourcePrecedence
+	for rows.Next() {
+		var p entity.SourcePrecedence
+		var at string
+		if err := rows.Scan(&p.Attribute, &p.Source, &at, &p.CreatedBy); err != nil {
+			return nil, err
+		}
+		p.CreatedAt, _ = parseTime(at)
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// SetPrecedence upserts a precedence rule.
+func (s *Store) SetPrecedence(ctx context.Context, p entity.SourcePrecedence) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO source_precedence (attribute, source, created_at, created_by)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(attribute) DO UPDATE SET source=excluded.source, created_at=excluded.created_at, created_by=excluded.created_by`,
+		p.Attribute, p.Source, ft(p.CreatedAt), p.CreatedBy)
+	return err
+}
+
+// DeletePrecedence clears a precedence rule.
+func (s *Store) DeletePrecedence(ctx context.Context, attribute string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM source_precedence WHERE attribute=?`, attribute)
+	return err
+}
+
 // DeleteObservation removes one observation row by id.
 func (s *Store) DeleteObservation(ctx context.Context, id int64) (int64, error) {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM observations WHERE id=?`, id)

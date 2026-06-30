@@ -92,6 +92,22 @@ func laterManual(a, b scored) bool {
 // conflict finds the strongest candidate that disagrees with the winner on both
 // value and source — the §3.3 "two sources disagree" case. It is only meaningful
 // for high-value attributes (the caller decides which). The winner stays current;
+// bestFromSource returns the strongest candidate from a given source, or
+// ok=false if that source contributed nothing. Used by the source-precedence
+// policy ("always prefer source X for attribute Y").
+func (r *resolver) bestFromSource(src string) (scored, bool) {
+	var best scored
+	var have bool
+	for _, c := range r.cands {
+		if string(c.obs.Source) == src {
+			if !have || better(c, best) {
+				best, have = c, true
+			}
+		}
+	}
+	return best, have
+}
+
 // support returns how many candidate observations carry a given value and the
 // most recent time it was observed — the provenance shown for a conflict side.
 func (r *resolver) support(value string) (count int, last time.Time) {

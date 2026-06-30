@@ -703,10 +703,16 @@ async function openConflicts() {
     const last = which === "a" ? c.last_seen_a : c.last_seen_b;
     const prov = `${cnt || 1} observation${(cnt || 1) === 1 ? "" : "s"}${last && !String(last).startsWith("0001") ? " · last " + fmtTime(last) : ""}`;
     const btn = admin
-      ? `<button class="ghost keep" data-subject="${esc(c.subject)}" data-attr="${esc(c.attribute)}" data-value="${esc(val)}" data-source="${esc(src)}">Keep this</button>`
+      ? `<button class="ghost keep" data-subject="${esc(c.subject)}" data-attr="${esc(c.attribute)}" data-value="${esc(val)}" data-source="${esc(src)}">Keep this</button>
+         <button class="ghost prefer" data-attr="${esc(c.attribute)}" data-source="${esc(src)}" title="Always prefer ${esc(src)} for ${esc(c.attribute)} — resolves this whole class of conflicts">Always prefer ${esc(src)}</button>`
       : "";
     return `<div class="cf-side"><div><b>${esc(val)}</b> <span class="src">(${esc(src)})</span></div><div class="muted-note">${esc(prov)}</div>${btn}</div>`;
   };
+  const precedence = data.precedence || [];
+  const precHTML = precedence.length ? `
+    <h3>Source-precedence policy <span class="badge">${precedence.length}</span></h3>
+    <p class="muted-note">For these attributes, the chosen source's value always wins (manual annotations still override). Conflicts they cover are auto-resolved.</p>
+    ${precedence.map((p) => `<div class="cf-card"><span class="mono">${esc(p.attribute)}</span> → always prefer <b>${esc(p.source)}</b>${admin ? ` <button class="ghost prec-clear" data-attr="${esc(p.attribute)}">Clear</button>` : ""}</div>`).join("")}` : "";
 
   const openHTML = open.length ? open.map((c) => `
     <div class="cf-card" data-subject="${esc(c.subject)}" data-attr="${esc(c.attribute)}">
@@ -730,7 +736,8 @@ async function openConflicts() {
     <h3>Open <span class="badge">${open.length}</span></h3>
     ${openHTML}
     <h3>Resolved <span class="badge">${resolved.length}</span></h3>
-    ${resolvedHTML}`;
+    ${resolvedHTML}
+    ${precHTML}`;
 
   if (admin) {
     for (const b of $("detail-body").querySelectorAll(".keep")) {
@@ -751,6 +758,19 @@ async function openConflicts() {
         b.disabled = true;
         try { await post("/api/conflict/reopen", { subject: b.dataset.subject, attribute: b.dataset.attr }); toast("Reopened"); openConflicts(); refresh(); }
         catch (e) { toast(e.message); b.disabled = false; }
+      };
+    }
+    for (const b of $("detail-body").querySelectorAll(".prefer")) {
+      b.onclick = async () => {
+        if (!confirm(`Always prefer “${b.dataset.source}” for ${b.dataset.attr}? This resolves every current and future conflict on that attribute where ${b.dataset.source} is a side.`)) return;
+        try { await post("/api/conflict/precedence", { attribute: b.dataset.attr, source: b.dataset.source }); toast("Policy set"); openConflicts(); refresh(); }
+        catch (e) { toast(e.message); }
+      };
+    }
+    for (const b of $("detail-body").querySelectorAll(".prec-clear")) {
+      b.onclick = async () => {
+        try { await post("/api/conflict/precedence", { attribute: b.dataset.attr, source: "" }); toast("Policy cleared"); openConflicts(); refresh(); }
+        catch (e) { toast(e.message); }
       };
     }
   }

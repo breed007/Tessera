@@ -86,6 +86,44 @@ type reopenConflictRequest struct {
 	Attribute string `json:"attribute"`
 }
 
+// precedenceRequest sets (or, with an empty source, clears) the preferred source
+// for an attribute — a policy that resolves a whole class of conflicts at once.
+type precedenceRequest struct {
+	Attribute string `json:"attribute"`
+	Source    string `json:"source"`
+}
+
+func (s *Server) handleSetPrecedence(w http.ResponseWriter, r *http.Request) {
+	who, ok := s.requireAdmin(w, r)
+	if !ok {
+		return
+	}
+	var req precedenceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad JSON")
+		return
+	}
+	req.Attribute, req.Source = strings.TrimSpace(req.Attribute), strings.TrimSpace(req.Source)
+	if req.Attribute == "" {
+		writeErr(w, http.StatusBadRequest, "attribute is required")
+		return
+	}
+	ctx := r.Context()
+	if req.Source == "" {
+		if err := s.store.DeletePrecedence(ctx, req.Attribute); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	} else if err := s.store.SetPrecedence(ctx, entity.SourcePrecedence{
+		Attribute: req.Attribute, Source: req.Source, CreatedAt: time.Now().UTC(), CreatedBy: who.username,
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.reconcileNow(ctx)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
 func (s *Server) handleReopenConflict(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireAdmin(w, r); !ok {
 		return

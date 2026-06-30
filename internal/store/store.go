@@ -135,6 +135,14 @@ type MergeStore interface {
 	DeleteMerge(ctx context.Context, secondary string) error
 }
 
+// PrecedenceStore persists the source-precedence policy (attribute → preferred
+// source), folded into reconciliation.
+type PrecedenceStore interface {
+	ListPrecedence(ctx context.Context) ([]entity.SourcePrecedence, error)
+	SetPrecedence(ctx context.Context, p entity.SourcePrecedence) error
+	DeletePrecedence(ctx context.Context, attribute string) error
+}
+
 // Store is the full persistence surface handed to the app at startup.
 type Store interface {
 	ObservationLog
@@ -144,6 +152,7 @@ type Store interface {
 	ForgetStore
 	AvailabilityStore
 	MergeStore
+	PrecedenceStore
 	Migrate(ctx context.Context) error
 	Close() error
 }

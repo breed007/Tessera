@@ -61,8 +61,38 @@ func setupConflict(t *testing.T) *httptest.Server {
 }
 
 type conflictsResp struct {
-	Open     []map[string]any `json:"open"`
-	Resolved []map[string]any `json:"resolved"`
+	Open       []map[string]any `json:"open"`
+	Resolved   []map[string]any `json:"resolved"`
+	Precedence []map[string]any `json:"precedence"`
+}
+
+func TestConflictPrecedence(t *testing.T) {
+	ts := setupConflict(t)
+	// One open conflict to start (device_class: UniFi vs Fingerbank).
+	d := getJSON[conflictsResp](t, ts.URL+"/api/conflicts")
+	if len(d.Open) != 1 {
+		t.Fatalf("open = %d, want 1", len(d.Open))
+	}
+	// Set a precedence policy preferring UniFi for device_class.
+	r := authPost(t, ts.URL+"/api/conflict/precedence", map[string]any{"attribute": "device_class", "source": "unifi"})
+	if r.StatusCode != 200 {
+		t.Fatalf("set precedence → %d", r.StatusCode)
+	}
+	r.Body.Close()
+	d2 := getJSON[conflictsResp](t, ts.URL+"/api/conflicts")
+	if len(d2.Open) != 0 {
+		t.Errorf("after policy, open = %d, want 0 (auto-resolved)", len(d2.Open))
+	}
+	if len(d2.Precedence) != 1 {
+		t.Errorf("precedence rules = %d, want 1", len(d2.Precedence))
+	}
+	// Clearing the policy reopens the conflict.
+	c := authPost(t, ts.URL+"/api/conflict/precedence", map[string]any{"attribute": "device_class", "source": ""})
+	c.Body.Close()
+	d3 := getJSON[conflictsResp](t, ts.URL+"/api/conflicts")
+	if len(d3.Open) != 1 {
+		t.Errorf("after clearing policy, open = %d, want 1", len(d3.Open))
+	}
 }
 
 func TestConflictResolveReopen(t *testing.T) {

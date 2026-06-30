@@ -39,6 +39,10 @@ type engine struct {
 	// deriving a host key so both identities fold into one host (§ host merge).
 	merges map[string]string
 
+	// source-precedence policy: attribute -> preferred source. When set, that
+	// source's value wins the fold for the attribute (manual still overrides).
+	precedence map[string]string
+
 	// first-pass identity resolution
 	ownerCand map[string]*resolver // ip -> candidate ip_binding observations (value = mac)
 
@@ -95,16 +99,17 @@ type addrAcc struct {
 
 func newEngine(now time.Time, p Params) *engine {
 	return &engine{
-		now:       now,
-		params:    p,
-		merges:    map[string]string{},
-		ownerCand: map[string]*resolver{},
-		hosts:     map[string]*hostAcc{},
-		ifaces:    map[string]*ifaceAcc{},
-		addrs:     map[string]*addrAcc{},
-		svcs:      map[string]*entity.Service{},
-		topo:      map[string]*entity.Topology{},
-		subnets:   map[string]*subnetAcc{},
+		now:        now,
+		params:     p,
+		merges:     map[string]string{},
+		precedence: map[string]string{},
+		ownerCand:  map[string]*resolver{},
+		hosts:      map[string]*hostAcc{},
+		ifaces:     map[string]*ifaceAcc{},
+		addrs:      map[string]*addrAcc{},
+		svcs:       map[string]*entity.Service{},
+		topo:       map[string]*entity.Topology{},
+		subnets:    map[string]*subnetAcc{},
 	}
 }
 
@@ -484,7 +489,7 @@ func (e *engine) snapshot() (entity.Snapshot, []conflictRec) {
 		// fall back to the best discovered hostname.
 		if w, ok := winnerValue(h.attrs[observation.AttrDisplayName]); ok {
 			host.DisplayName = w
-		} else if w, ok := winnerValue(h.attrs[observation.AttrHostname]); ok {
+		} else if w, ok := winnerValuePref(h.attrs[observation.AttrHostname], e.precedence["hostname"]); ok {
 			host.DisplayName = w
 		}
 		// Human annotations (§3.2): authoritative, manual-only in practice.
@@ -506,14 +511,14 @@ func (e *engine) snapshot() (entity.Snapshot, []conflictRec) {
 		if w, ok := winnerValue(h.attrs[observation.AttrFirmware]); ok {
 			host.Firmware = w
 		}
-		if w, ok := winnerValue(h.attrs[observation.AttrModel]); ok {
+		if w, ok := winnerValuePref(h.attrs[observation.AttrModel], e.precedence["model"]); ok {
 			host.Model = w
 		}
-		if s, ok := winnerScored(h.attrs[observation.AttrDeviceClass]); ok {
+		if s, ok := winnerScoredPref(h.attrs[observation.AttrDeviceClass], e.precedence["device_class"]); ok {
 			host.DeviceClass = s.obs.Value
 			host.Confidence = clampConf(s.eff * e.randomizedFactor(h))
 		}
-		if s, ok := winnerScored(h.attrs[observation.AttrOSGuess]); ok {
+		if s, ok := winnerScoredPref(h.attrs[observation.AttrOSGuess], e.precedence["os_guess"]); ok {
 			host.OSGuess = s.obs.Value
 			if host.Confidence == 0 {
 				host.Confidence = clampConf(s.eff * e.randomizedFactor(h))
@@ -799,6 +804,36 @@ func winnerValue(r *resolver) (string, bool) {
 		return "", false
 	}
 	return w.obs.Value, true
+}
+
+// winnerScoredPref resolves the winner honoring a source-precedence rule: a
+// manual annotation is still authoritative; otherwise, if a preferred source is
+// set and contributed a candidate, that candidate wins regardless of confidence;
+// else the normal §3.3 winner. preferred "" = no policy (identical to winner).
+func winnerScoredPref(r *resolver, preferred string) (scored, bool) {
+	if r == nil {
+		return scored{}, false
+	}
+	w, ok := r.winner()
+	if !ok {
+		return scored{}, false
+	}
+	if w.obs.Source == observation.SourceManual || preferred == "" {
+		return w, true
+	}
+	if best, have := r.bestFromSource(preferred); have {
+		return best, true
+	}
+	return w, true
+}
+
+// winnerValuePref is winnerScoredPref returning just the value.
+func winnerValuePref(r *resolver, preferred string) (string, bool) {
+	s, ok := winnerScoredPref(r, preferred)
+	if !ok {
+		return "", false
+	}
+	return s.obs.Value, true
 }
 
 func winnerScored(r *resolver) (scored, bool) {

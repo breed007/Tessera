@@ -154,6 +154,16 @@ func (s SecuritySuppression) Active(now time.Time) bool {
 	return s.ExpiresAt == nil || now.Before(*s.ExpiresAt)
 }
 
+// SourcePrecedence is an operator policy: for the named attribute, always prefer
+// this source's value (the reconciler picks it in the fold; manual still wins).
+// Resolves a whole class of conflicts at once.
+type SourcePrecedence struct {
+	Attribute string    `json:"attribute"`
+	Source    string    `json:"source"`
+	CreatedAt time.Time `json:"created_at"`
+	CreatedBy string    `json:"created_by,omitempty"`
+}
+
 // HostMerge is an operator decision that two host identities are the same device:
 // the Secondary stable_id folds into the Primary during reconciliation (the
 // reconciler canonicalizes host keys through these links — append-safe, no log

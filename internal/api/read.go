@@ -302,16 +302,30 @@ func (s *Server) handleConflicts(w http.ResponseWriter, r *http.Request) {
 	for _, rr := range resolved {
 		resolvedKeys[conflictKey(rr.Subject, rr.Attribute)] = true
 	}
+	// Source-precedence policy auto-resolves any conflict on a covered attribute
+	// whose preferred source is one of the two sides.
+	precedence, _ := s.store.ListPrecedence(ctx)
+	prefByAttr := map[string]string{}
+	for _, p := range precedence {
+		prefByAttr[p.Attribute] = p.Source
+	}
 	open := make([]entity.Conflict, 0)
 	for _, c := range snap.Conflicts {
-		if !c.Resolved && !resolvedKeys[conflictKey(c.Subject, c.Attribute)] {
-			open = append(open, c)
+		if c.Resolved || resolvedKeys[conflictKey(c.Subject, c.Attribute)] {
+			continue
 		}
+		if pref, ok := prefByAttr[c.Attribute]; ok && (pref == c.SourceA || pref == c.SourceB) {
+			continue // resolved by policy
+		}
+		open = append(open, c)
 	}
 	if resolved == nil {
 		resolved = []entity.ConflictResolution{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"open": open, "resolved": resolved})
+	if precedence == nil {
+		precedence = []entity.SourcePrecedence{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"open": open, "resolved": resolved, "precedence": precedence})
 }
 
 // conflictKey is the stable identity of a conflict / resolution across rebuilds
@@ -328,11 +342,20 @@ func (s *Server) openConflictCount(ctx context.Context, snap entity.Snapshot) in
 	for _, rr := range resolved {
 		resolvedKeys[conflictKey(rr.Subject, rr.Attribute)] = true
 	}
+	precedence, _ := s.store.ListPrecedence(ctx)
+	prefByAttr := map[string]string{}
+	for _, p := range precedence {
+		prefByAttr[p.Attribute] = p.Source
+	}
 	n := 0
 	for _, c := range snap.Conflicts {
-		if !c.Resolved && !resolvedKeys[conflictKey(c.Subject, c.Attribute)] {
-			n++
+		if c.Resolved || resolvedKeys[conflictKey(c.Subject, c.Attribute)] {
+			continue
 		}
+		if pref, ok := prefByAttr[c.Attribute]; ok && (pref == c.SourceA || pref == c.SourceB) {
+			continue
+		}
+		n++
 	}
 	return n
 }

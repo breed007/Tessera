@@ -447,9 +447,10 @@ func (s *Store) ReplaceEntities(ctx context.Context, snap entity.Snapshot) error
 	}
 	for _, c := range snap.Conflicts {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO conflicts
-			(id, subject, attribute, value_a, source_a, value_b, source_b, opened_at, resolved)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			c.ID, c.Subject, c.Attribute, c.ValueA, c.SourceA, c.ValueB, c.SourceB,
+			(id, subject, attribute, value_a, source_a, count_a, last_seen_a, value_b, source_b, count_b, last_seen_b, opened_at, resolved)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			c.ID, c.Subject, c.Attribute, c.ValueA, c.SourceA, c.CountA, ft(c.LastSeenA),
+			c.ValueB, c.SourceB, c.CountB, ft(c.LastSeenB),
 			ft(c.OpenedAt), b2i(c.Resolved)); err != nil {
 			return fmt.Errorf("sqlite: insert conflict: %w", err)
 		}
@@ -620,7 +621,7 @@ func (s *Store) loadTopology(ctx context.Context) ([]entity.Topology, error) {
 }
 
 func (s *Store) loadConflicts(ctx context.Context) ([]entity.Conflict, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, subject, attribute, value_a, source_a, value_b, source_b, opened_at, resolved FROM conflicts ORDER BY id`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, subject, attribute, value_a, source_a, count_a, last_seen_a, value_b, source_b, count_b, last_seen_b, opened_at, resolved FROM conflicts ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -629,12 +630,14 @@ func (s *Store) loadConflicts(ctx context.Context) ([]entity.Conflict, error) {
 	for rows.Next() {
 		var v entity.Conflict
 		var res int
-		var op string
-		if err := rows.Scan(&v.ID, &v.Subject, &v.Attribute, &v.ValueA, &v.SourceA, &v.ValueB, &v.SourceB, &op, &res); err != nil {
+		var op, lsa, lsb string
+		if err := rows.Scan(&v.ID, &v.Subject, &v.Attribute, &v.ValueA, &v.SourceA, &v.CountA, &lsa, &v.ValueB, &v.SourceB, &v.CountB, &lsb, &op, &res); err != nil {
 			return nil, err
 		}
 		v.Resolved = res != 0
 		v.OpenedAt, _ = parseTime(op)
+		v.LastSeenA, _ = parseTime(lsa)
+		v.LastSeenB, _ = parseTime(lsb)
 		out = append(out, v)
 	}
 	return out, rows.Err()

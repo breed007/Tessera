@@ -19,6 +19,8 @@ import (
 var highValueAttrs = map[observation.Attribute]bool{
 	observation.AttrDeviceClass: true,
 	observation.AttrOSGuess:     true,
+	observation.AttrModel:       true, // UniFi vs mDNS self-report disagreements are meaningful
+	observation.AttrHostname:    true, // a device named differently by mDNS / DHCP / NetBIOS
 }
 
 // randomizedConfidencePenalty scales down a host's classification confidence
@@ -699,8 +701,12 @@ type conflictRec struct {
 	attribute string
 	valueA    string
 	sourceA   string
+	countA    int
+	lastA     time.Time
 	valueB    string
 	sourceB   string
+	countB    int
+	lastB     time.Time
 	openedAt  time.Time
 }
 
@@ -720,13 +726,19 @@ func (e *engine) collectConflicts(subject string, r *resolver) []conflictRec {
 	if alt.obs.ObservedAt.After(opened) {
 		opened = alt.obs.ObservedAt
 	}
+	cntA, lastA := r.support(w.obs.Value)
+	cntB, lastB := r.support(alt.obs.Value)
 	return []conflictRec{{
 		subject:   subject,
 		attribute: string(w.obs.Attribute),
 		valueA:    w.obs.Value,
 		sourceA:   string(w.obs.Source),
+		countA:    cntA,
+		lastA:     lastA,
 		valueB:    alt.obs.Value,
 		sourceB:   string(alt.obs.Source),
+		countB:    cntB,
+		lastB:     lastB,
 		openedAt:  opened,
 	}}
 }

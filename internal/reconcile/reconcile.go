@@ -161,8 +161,12 @@ func toConflicts(recs []conflictRec) []entity.Conflict {
 			Attribute: c.attribute,
 			ValueA:    c.valueA,
 			SourceA:   c.sourceA,
+			CountA:    c.countA,
+			LastSeenA: c.lastA,
 			ValueB:    c.valueB,
 			SourceB:   c.sourceB,
+			CountB:    c.countB,
+			LastSeenB: c.lastB,
 			OpenedAt:  c.openedAt,
 			Resolved:  false,
 		})

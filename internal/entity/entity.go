@@ -108,8 +108,12 @@ type Conflict struct {
 	Attribute string    `json:"attribute"`
 	ValueA    string    `json:"value_a"`
 	SourceA   string    `json:"source_a"`
+	CountA    int       `json:"count_a"`     // supporting observations for value A
+	LastSeenA time.Time `json:"last_seen_a"` // most recent observation of value A
 	ValueB    string    `json:"value_b"`
 	SourceB   string    `json:"source_b"`
+	CountB    int       `json:"count_b"`
+	LastSeenB time.Time `json:"last_seen_b"`
 	OpenedAt  time.Time `json:"opened_at"`
 	Resolved  bool      `json:"resolved"`
 }

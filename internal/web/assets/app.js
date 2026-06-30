@@ -699,10 +699,13 @@ async function openConflicts() {
   const side = (c, which) => {
     const val = which === "a" ? c.value_a : c.value_b;
     const src = which === "a" ? c.source_a : c.source_b;
+    const cnt = which === "a" ? c.count_a : c.count_b;
+    const last = which === "a" ? c.last_seen_a : c.last_seen_b;
+    const prov = `${cnt || 1} observation${(cnt || 1) === 1 ? "" : "s"}${last && !String(last).startsWith("0001") ? " · last " + fmtTime(last) : ""}`;
     const btn = admin
       ? `<button class="ghost keep" data-subject="${esc(c.subject)}" data-attr="${esc(c.attribute)}" data-value="${esc(val)}" data-source="${esc(src)}">Keep this</button>`
       : "";
-    return `<div class="cf-side"><div><b>${esc(val)}</b> <span class="src">(${esc(src)})</span></div>${btn}</div>`;
+    return `<div class="cf-side"><div><b>${esc(val)}</b> <span class="src">(${esc(src)})</span></div><div class="muted-note">${esc(prov)}</div>${btn}</div>`;
   };
 
   const openHTML = open.length ? open.map((c) => `

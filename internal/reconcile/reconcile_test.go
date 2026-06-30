@@ -27,6 +27,42 @@ func newStore(t *testing.T) store.Store {
 	return st
 }
 
+func TestConflictProvenance(t *testing.T) {
+	st := newStore(t)
+	ctx := context.Background()
+	sink := observation.NewSink("seed", st)
+	rec := func(src observation.Source, a observation.Attribute, v string, c int) {
+		if _, err := sink.Record(ctx, src, observation.SubjectMAC, "aa:bb:cc:00:00:01", a, v, c, observation.At(testT0)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// model disagreement (a newly-conflict-eligible attribute): two sources say
+	// "U7 Pro", one says "AC Pro".
+	rec(observation.SourceUniFi, observation.AttrModel, "U7 Pro", 85)
+	rec(observation.SourcePassiveMDNS, observation.AttrModel, "U7 Pro", 70)
+	rec(observation.SourceFingerbank, observation.AttrModel, "AC Pro", 80)
+
+	if _, err := New(st, nil, testParams()).Rebuild(ctx); err != nil {
+		t.Fatal(err)
+	}
+	snap, _ := st.LoadEntities(ctx)
+	var cf *entity.Conflict
+	for i := range snap.Conflicts {
+		if snap.Conflicts[i].Attribute == "model" {
+			cf = &snap.Conflicts[i]
+		}
+	}
+	if cf == nil {
+		t.Fatalf("expected a model conflict, got %+v", snap.Conflicts)
+	}
+	if cf.ValueA != "U7 Pro" || cf.CountA != 2 {
+		t.Errorf("winning side = %q x%d, want U7 Pro x2", cf.ValueA, cf.CountA)
+	}
+	if cf.ValueB != "AC Pro" || cf.CountB != 1 {
+		t.Errorf("alt side = %q x%d, want AC Pro x1", cf.ValueB, cf.CountB)
+	}
+}
+
 func TestHostMerge(t *testing.T) {
 	st := newStore(t)
 	ctx := context.Background()

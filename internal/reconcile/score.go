@@ -92,6 +92,20 @@ func laterManual(a, b scored) bool {
 // conflict finds the strongest candidate that disagrees with the winner on both
 // value and source — the §3.3 "two sources disagree" case. It is only meaningful
 // for high-value attributes (the caller decides which). The winner stays current;
+// support returns how many candidate observations carry a given value and the
+// most recent time it was observed — the provenance shown for a conflict side.
+func (r *resolver) support(value string) (count int, last time.Time) {
+	for _, c := range r.cands {
+		if c.obs.Value == value {
+			count++
+			if c.obs.ObservedAt.After(last) {
+				last = c.obs.ObservedAt
+			}
+		}
+	}
+	return count, last
+}
+
 // the disagreement is surfaced.
 func (r *resolver) conflict(winner scored) (scored, bool) {
 	var alt scored

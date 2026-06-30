@@ -325,6 +325,7 @@ const topoCollapsed = new Set();
 let topoView = { tx: 0, ty: 0, scale: 1 };
 let topoDrag = null;
 let topoPanInit = false;
+let topoSeeded = false; // collapse big subtrees once, on the first load
 function topoApply() {
   const g = document.getElementById("topo-g");
   if (g) g.setAttribute("transform", `translate(${topoView.tx},${topoView.ty}) scale(${topoView.scale})`);
@@ -353,7 +354,18 @@ async function renderTopology(preserveView) {
     return;
   }
 
-  const NODE_W = 168, NODE_H = 46, H_GAP = 20, V_GAP = 66, ROOT_GAP = 56;
+  // First load: collapse switches/APs that fan out to many clients so the default
+  // view is the readable gateway → switch backbone, not a 100-wide wall of leaves.
+  if (!topoSeeded) {
+    const seed = (n, depth) => {
+      if (depth >= 1 && n.stable_id && (n.children || []).length > 6) topoCollapsed.add(n.stable_id);
+      (n.children || []).forEach((k) => seed(k, depth + 1));
+    };
+    roots.forEach((r) => seed(r, 0));
+    topoSeeded = true;
+  }
+
+  const NODE_W = 172, NODE_H = 48, H_GAP = 26, V_GAP = 86, ROOT_GAP = 64;
   let cursorX = 0;
   const edges = [];
   const layout = (n, depth, parent) => {
@@ -406,8 +418,10 @@ async function renderTopology(preserveView) {
   const canvas = $("topo-canvas"), svg = $("topo-svg");
   const fit = () => {
     const cw = canvas.clientWidth || 800, ch = canvas.clientHeight || 500;
-    const s = Math.min(cw / (maxX + 40), ch / (maxY + 40), 1.2);
-    topoView = { scale: s > 0 ? s : 1, tx: (cw - maxX * (s > 0 ? s : 1)) / 2, ty: 24 };
+    let s = Math.min((cw - 48) / maxX, (ch - 48) / maxY, 1.3);
+    if (!isFinite(s) || s <= 0) s = 1;
+    if (s < 0.5) s = 0.5; // floor: pan a wide tree instead of shrinking it to dust
+    topoView = { scale: s, tx: Math.max(24, (cw - maxX * s) / 2), ty: 24 };
     topoApply();
   };
   if (preserveView) topoApply(); else fit();

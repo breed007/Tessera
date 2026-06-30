@@ -103,17 +103,19 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 .cf-card { background: var(--surface-raised); border: 1px solid var(--hairline); border-radius: 6px; padding: 10px 12px; margin: 8px 0; font-size: 12px; }
 .cf-card.resolved { opacity: 0.85; }
 .cf-head { display: flex; align-items: center; gap: 8px; justify-content: space-between; margin-bottom: 8px; }
-.cf-sides { display: flex; align-items: center; gap: 10px; }
-.cf-side { flex: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px; background: var(--bg); border: 1px solid var(--hairline); border-radius: 5px; padding: 7px 9px; }
+/* Stack the two sides vertically so each gets the full panel width (side-by-side
+   overflowed the slide-over and clipped the second value). */
+.cf-sides { display: flex; flex-direction: column; gap: 8px; }
+.cf-side { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; background: var(--bg); border: 1px solid var(--hairline); border-radius: 5px; padding: 7px 9px; }
 .cf-side b { color: var(--accent); }
-.cf-sides .vs { color: var(--faint); flex: 0 0 auto; }
+.cf-sides .vs { color: var(--faint); text-align: center; font-size: 11px; }
 .cf-note { width: 100%; margin-top: 8px; padding: 6px 8px; background: var(--bg); border: 1px solid var(--hairline); border-radius: 3px; color: var(--text); font-family: var(--mono); font-size: 12px; }
 .cf-note:focus { outline: none; border-color: var(--accent); }
 .cf-note-text { color: var(--text-secondary, var(--text)); margin-top: 4px; }
 
 .overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); z-index: 5; }
 .detail {
-  position: fixed; top: 0; right: 0; height: 100%; width: 540px; max-width: 92vw;
+  position: fixed; top: 0; right: 0; height: 100%; width: 720px; max-width: 94vw;
   background: var(--surface); border-left: 1px solid var(--accent-dim); z-index: 6;
   overflow-y: auto; padding: 20px 22px;
 }

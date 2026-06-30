@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 )
@@ -43,12 +44,20 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusServiceUnavailable, "backup unavailable (no database path)")
 		return
 	}
-	tmp := s.dsn + ".backuptmp"
+	// A unique temp path so concurrent backups don't clobber each other.
+	tf, err := os.CreateTemp(filepath.Dir(s.dsn), "tessera-backup-*.db")
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	tmp := tf.Name()
+	tf.Close()
+	_ = os.Remove(tmp) // VACUUM INTO needs the destination not to exist
+	defer os.Remove(tmp)
 	if err := s.store.Backup(r.Context(), tmp); err != nil {
 		writeErr(w, http.StatusInternalServerError, "backup failed: "+err.Error())
 		return
 	}
-	defer os.Remove(tmp)
 	f, err := os.Open(tmp)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())

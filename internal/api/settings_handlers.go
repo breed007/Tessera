@@ -24,10 +24,11 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"editable":          editable,
-		"secrets_set":       flags,
-		"can_store_secrets": s.settings.CanStoreSecrets(),
-		"restart_pending":   s.restartPending.Load(),
+		"editable":                editable,
+		"secrets_set":             flags,
+		"can_store_secrets":       s.settings.CanStoreSecrets(),
+		"restart_pending":         s.restartPending.Load(),
+		"secret_decrypt_failures": s.settings.DecryptFailures(r.Context()),
 	})
 }
 

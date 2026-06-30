@@ -10,6 +10,7 @@ import (
 
 	"github.com/tessera/tessera/internal/entity"
 	"github.com/tessera/tessera/internal/observation"
+	"github.com/tessera/tessera/internal/portrisk"
 	"github.com/tessera/tessera/internal/store"
 )
 
@@ -19,7 +20,7 @@ type HostRow struct {
 	MACs    []string `json:"macs"`
 	IPs     []string `json:"ips"`
 	Vendor  string   `json:"vendor"`
-	Online  bool     `json:"online"` // has at least one active address
+	Online  bool     `json:"online"`   // has at least one active address
 	IconID  string   `json:"icon_id"`  // effective icon (manual or auto-assigned)
 	IconURL string   `json:"icon_url"` // resolved asset path
 }
@@ -27,17 +28,20 @@ type HostRow struct {
 // HostDetail is a host with everything attached to it, including the provenance
 // trail (the observations that produced it).
 type HostDetail struct {
-	Host         entity.Host        `json:"host"`
-	IconID       string             `json:"icon_id"`
-	IconURL      string             `json:"icon_url"`
-	Interfaces   []entity.Interface `json:"interfaces"`
-	Addresses    []entity.Address   `json:"addresses"`
-	Services     []entity.Service   `json:"services"`
-	Topology     []entity.Topology  `json:"topology"`
-	Observations []ObservationView  `json:"observations"`
-	Changes      []ChangeView       `json:"changes"`
-	Availability *AvailabilityView  `json:"availability,omitempty"`
-	MergedFrom   []string           `json:"merged_from,omitempty"` // identities this host has absorbed
+	Host          entity.Host        `json:"host"`
+	IconID        string             `json:"icon_id"`
+	IconURL       string             `json:"icon_url"`
+	Interfaces    []entity.Interface `json:"interfaces"`
+	Addresses     []entity.Address   `json:"addresses"`
+	Services      []entity.Service   `json:"services"`
+	Topology      []entity.Topology  `json:"topology"`
+	Observations  []ObservationView  `json:"observations"`
+	Changes       []ChangeView       `json:"changes"`
+	Availability  *AvailabilityView  `json:"availability,omitempty"`
+	MergedFrom    []string           `json:"merged_from,omitempty"` // identities this host has absorbed
+	SecHigh       int                `json:"sec_high"`              // active high-severity findings for this host
+	SecFindings   int                `json:"sec_findings"`          // active findings (all severities)
+	OpenConflicts int                `json:"open_conflicts"`        // unresolved conflicts on this host
 }
 
 // ChangeView is one meaningful change derived from the observation history — the
@@ -168,6 +172,7 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 	if ms, err := s.store.ListMerges(r.Context()); err == nil {
 		detail.MergedFrom = mergedInto(ms, host.StableID)
 	}
+	detail.SecHigh, detail.SecFindings, detail.OpenConflicts = s.hostIssues(r.Context(), host, detail.Services, snap)
 	writeJSON(w, http.StatusOK, detail)
 }
 
@@ -326,6 +331,50 @@ func (s *Server) handleConflicts(w http.ResponseWriter, r *http.Request) {
 		precedence = []entity.SourcePrecedence{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"open": open, "resolved": resolved, "precedence": precedence})
+}
+
+// hostIssues counts the active security findings (and high-severity subset) and
+// the open conflicts for one host, so its detail page can flag problems where the
+// device lives instead of making the operator hunt the Security/Conflicts pages.
+func (s *Server) hostIssues(ctx context.Context, host entity.Host, services []entity.Service, snap entity.Snapshot) (high, findings, conflicts int) {
+	supps, _ := s.store.ListSecuritySuppressions(ctx)
+	now := time.Now().UTC()
+	suppressed := map[string]bool{}
+	for _, sp := range supps {
+		if sp.Active(now) {
+			suppressed[suppressionKey(sp.StableID, sp.Proto, sp.Port)] = true
+		}
+	}
+	for _, sv := range services {
+		risk, ok := portrisk.Classify(sv.Port)
+		if !ok || suppressed[suppressionKey(host.StableID, sv.Proto, sv.Port)] {
+			continue
+		}
+		findings++
+		if risk.Severity == "high" {
+			high++
+		}
+	}
+	resolved, _ := s.store.ListResolutions(ctx)
+	resolvedKeys := map[string]bool{}
+	for _, rr := range resolved {
+		resolvedKeys[conflictKey(rr.Subject, rr.Attribute)] = true
+	}
+	prec, _ := s.store.ListPrecedence(ctx)
+	pref := map[string]string{}
+	for _, p := range prec {
+		pref[p.Attribute] = p.Source
+	}
+	for _, c := range snap.Conflicts {
+		if c.Subject != host.StableID || c.Resolved || resolvedKeys[conflictKey(c.Subject, c.Attribute)] {
+			continue
+		}
+		if p, ok := pref[c.Attribute]; ok && (p == c.SourceA || p == c.SourceB) {
+			continue
+		}
+		conflicts++
+	}
+	return high, findings, conflicts
 }
 
 // conflictKey is the stable identity of a conflict / resolution across rebuilds

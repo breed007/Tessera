@@ -310,6 +310,50 @@ func TestCreateHost(t *testing.T) {
 	}
 }
 
+func TestCreateHostDoesNotStealIP(t *testing.T) {
+	ts := setup(t)
+	// setup() seeds mac:b8:27:eb:11:22:33 owning 10.0.0.20 (discovery, conf 95).
+	// Documenting a different device on the SAME IP must not yank it.
+	r := authPost(t, ts.URL+"/api/host/create", map[string]any{
+		"mac": "de:ad:be:ef:00:09", "ip": "10.0.0.20", "display_name": "Ghost",
+	})
+	if r.StatusCode != 200 {
+		t.Fatalf("create → %d", r.StatusCode)
+	}
+	var resp struct {
+		Warning string `json:"warning"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&resp)
+	r.Body.Close()
+	if resp.Warning == "" {
+		t.Errorf("expected a warning that the IP is already assigned")
+	}
+	// The real device keeps 10.0.0.20.
+	real := getJSON[HostDetail](t, ts.URL+"/api/host?id=mac:b8:27:eb:11:22:33")
+	got := false
+	for _, a := range real.Addresses {
+		if a.IP == "10.0.0.20" {
+			got = true
+		}
+	}
+	if !got {
+		t.Errorf("real host lost 10.0.0.20 to the manual ghost — IP was stolen")
+	}
+}
+
+func TestBulkCap(t *testing.T) {
+	ts := setup(t)
+	ids := make([]string, 2001)
+	for i := range ids {
+		ids[i] = "mac:00:00:00:00:00:01"
+	}
+	r := authPost(t, ts.URL+"/api/hosts/bulk", map[string]any{"stable_ids": ids, "action": "expected"})
+	r.Body.Close()
+	if r.StatusCode != 400 {
+		t.Errorf("bulk of 2001 → %d, want 400", r.StatusCode)
+	}
+}
+
 func TestCreateSubnet(t *testing.T) {
 	ts := setup(t)
 	bad := authPost(t, ts.URL+"/api/subnet/create", map[string]any{"cidr": "not-a-cidr"})

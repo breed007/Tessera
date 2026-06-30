@@ -81,6 +81,22 @@ func (r *resolver) winner() (scored, bool) {
 	return best, haveBest
 }
 
+// winnerByConfidence resolves purely on effective confidence + source tier + age,
+// with NO manual-wins short-circuit. Used for IP ownership: a hand-documented
+// binding (e.g. a manually-added device) must not steal a live, higher-confidence
+// binding off the real host — discovery wins, and the manual binding only takes
+// the address when it's genuinely uncontested.
+func (r *resolver) winnerByConfidence() (scored, bool) {
+	var best scored
+	var have bool
+	for _, c := range r.cands {
+		if !have || better(c, best) {
+			best, have = c, true
+		}
+	}
+	return best, have
+}
+
 // laterManual breaks ties between manual annotations by recency then id.
 func laterManual(a, b scored) bool {
 	if !a.obs.ObservedAt.Equal(b.obs.ObservedAt) {

@@ -4,6 +4,15 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 let me = null;
 
+// mutate guards a destructive/async action against double-submit: a second call
+// while one is in flight is ignored, so rage-clicking Forget/Merge/bulk fires once.
+let mutating = false;
+async function mutate(fn) {
+  if (mutating) return;
+  mutating = true;
+  try { await fn(); } finally { mutating = false; }
+}
+
 async function api(method, path, body) {
   const opts = { method, headers: {} };
   if (body !== undefined) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
@@ -86,9 +95,13 @@ function renderUserbar() {
 // ── inventory (unchanged behavior, admin-gated annotation) ───────────────────
 
 async function refresh() {
-  const [summary, hosts] = await Promise.all([
-    getJSON("/api/summary"), getJSON("/api/hosts"),
-  ]);
+  let summary, hosts;
+  try {
+    [summary, hosts] = await Promise.all([getJSON("/api/summary"), getJSON("/api/hosts")]);
+  } catch (e) {
+    toast("Couldn't load inventory: " + e.message);
+    return; // keep whatever's on screen rather than blanking it
+  }
   renderSummary(summary); renderHosts(hosts); renderDevices(hosts, summary.open_conflicts);
   renderTrends();
 }
@@ -614,8 +627,13 @@ function hostMatches(h, q) {
   return q.split(/\s+/).every((term) => hay.includes(term));
 }
 
+let lastFilterSig = "";
 function renderHosts(hosts) {
   if (hosts) hostsData = hosts;
+  // Changing the filter changes which rows you can see — drop any selection so a
+  // bulk action can't hit invisible, no-longer-shown devices.
+  const filterSig = tagFilter + "\x1f" + hostQuery;
+  if (filterSig !== lastFilterSig) { selectedHosts.clear(); lastFilterSig = filterSig; }
   let rows = hostsData;
   if (tagFilter) rows = rows.filter((h) => (h.tags || []).includes(tagFilter));
   if (hostQuery) rows = rows.filter((h) => hostMatches(h, hostQuery));
@@ -628,17 +646,17 @@ function renderHosts(hosts) {
   }
   const isAdmin = me && me.is_admin;
   const visibleIDs = rows.map((h) => h.stable_id);
-  $("hosts-body").innerHTML = rows.map((h) => `
+  $("hosts-body").innerHTML = rows.length ? rows.map((h) => `
     <tr data-id="${esc(h.stable_id)}">
       <td class="sel-col">${isAdmin ? `<input type="checkbox" class="row-sel" data-id="${esc(h.stable_id)}" ${selectedHosts.has(h.stable_id) ? "checked" : ""}>` : ""}</td>
-      <td><span class="online-dot ${h.online ? "on" : "off"}" title="${h.online ? "online" : "offline"}"></span><span class="dev-icon" style="${iconStyle(h.icon_url, "var(--accent)")}"></span>${esc(h.display_name || "(unnamed)")}${(h.tags || []).length ? `<div class="tags">${tagChips(h.tags, true)}</div>` : ""}</td>
+      <td><span class="online-dot ${h.online ? "on" : "off"}" title="${h.online ? "online — has an active address" : "offline — no active address"}"></span><span class="dev-icon" style="${iconStyle(h.icon_url, "var(--accent)")}"></span>${esc(h.display_name || "(unnamed)")}${(h.tags || []).length ? `<div class="tags">${tagChips(h.tags, true)}</div>` : ""}</td>
       <td>${esc(h.model || h.device_class || "—")}</td>
-      <td class="conf">${confBadge(h.device_class || h.os_guess ? h.confidence : 0)}</td>
       <td class="mono">${(h.ips || []).map(esc).join(", ") || "—"}</td>
       <td>${esc(h.vendor || "")}</td>
       <td>${expectedPill(h.is_expected)}</td>
       <td>${fmtTime(h.last_seen)}</td>
-    </tr>`).join("");
+    </tr>`).join("")
+    : `<tr><td colspan="7" class="muted-note" style="padding:18px;text-align:center">${hostsData.length ? "No devices match the current filter." : "No devices discovered yet — once a collector sees traffic, devices land here."}</td></tr>`;
   for (const tr of $("hosts-body").querySelectorAll("tr")) {
     tr.onclick = (e) => { if (!e.target.closest(".tag-chip") && !e.target.closest(".row-sel")) openHost(tr.dataset.id); };
   }
@@ -705,12 +723,14 @@ async function bulkAction(action) {
     if (!body.tags.length) return;
   }
   if (action === "forget" && !confirm(`Forget ${ids.length} device(s)?\n\nThis permanently deletes their stored history and annotations. Devices still on the network are rediscovered as new on the next scan.`)) return;
-  try {
-    const r = await post("/api/hosts/bulk", body);
-    toast(`${action === "forget" ? "Forgot" : "Updated"} ${r.affected} device(s)`);
-    selectedHosts.clear();
-    refresh();
-  } catch (e) { toast(e.message); }
+  await mutate(async () => {
+    try {
+      const r = await post("/api/hosts/bulk", body);
+      toast(`${action === "forget" ? "Forgot" : "Updated"} ${r.affected} device(s)`);
+      selectedHosts.clear();
+      refresh();
+    } catch (e) { toast(e.message); }
+  });
 }
 
 // renderTagFilterBar shows the active tag filter (with a clear button) + saved views.
@@ -721,8 +741,8 @@ function renderTagFilterBar() {
   const views = savedViews();
   const opts = `<option value="">Saved views…</option>` + views.map((v, i) => `<option value="${i}">${esc(v.name)}</option>`).join("");
   bar.innerHTML = `${pill}<span class="grow"></span>
-    <select id="view-select" class="view-select">${opts}</select>
-    <button class="ghost" id="view-save">Save view</button>${views.length ? `<button class="ghost" id="view-del">Delete</button>` : ""}`;
+    <select id="view-select" class="view-select" title="Saved views are stored in this browser only">${opts}</select>
+    <button class="ghost" id="view-save" title="Saves to this browser only">Save view</button>${views.length ? `<button class="ghost" id="view-del">Delete</button>` : ""}`;
   if ($("clear-tag")) $("clear-tag").onclick = () => { tagFilter = ""; renderHosts(); };
   $("view-select").onchange = (e) => { if (e.target.value !== "") applyView(views[+e.target.value]); };
   $("view-save").onclick = saveCurrentView;
@@ -803,8 +823,9 @@ function renderDevices(hosts, openCount) {
   // Per-category quick actions (move the tile to another category).
   const actions = (h) => {
     if (!admin) return "";
-    const b = (act, label) => `<button class="ghost dev-act" data-act="${act}" data-id="${esc(h.stable_id)}">${label}</button>`;
-    const fgt = `<button class="ghost dev-forget danger" data-id="${esc(h.stable_id)}" data-name="${esc(h.display_name || "")}" title="Delete all history and let it be rediscovered">⌫ Forget</button>`;
+    const titles = { expected: "Mark reviewed — keep and track it", ignored: "Hide from review — keeps history", new: "Move back to unreviewed" };
+    const b = (act, label) => `<button class="ghost dev-act" data-act="${act}" data-id="${esc(h.stable_id)}" title="${titles[act]}">${label}</button>`;
+    const fgt = `<button class="ghost dev-forget danger" data-id="${esc(h.stable_id)}" data-name="${esc(h.display_name || "")}" title="Delete all stored history (rediscovered as new if it returns)">⌫ Forget</button>`;
     let acts;
     if (deviceTab === "new") acts = b("expected", "✓ Expected") + b("ignored", "⊘ Ignore");
     else if (deviceTab === "expected") acts = b("ignored", "⊘ Ignore") + b("new", "↩ New");
@@ -842,12 +863,14 @@ function renderDevices(hosts, openCount) {
 // can be rediscovered fresh. Destructive → always confirmed.
 async function forgetDevice(stableId, name) {
   if (!confirm(`Forget “${name || stableId}”?\n\nThis permanently deletes all stored history and annotations for this device. If it's still on the network, it will be rediscovered as a new device on the next scan.`)) return;
-  try {
-    const r = await post("/api/host/forget", { stable_id: stableId });
-    toast(`Forgotten — ${r.observations_removed} records removed`);
-    closePanels();
-    refresh();
-  } catch (e) { toast(e.message); }
+  await mutate(async () => {
+    try {
+      const r = await post("/api/host/forget", { stable_id: stableId });
+      toast(`Forgotten — ${r.observations_removed} records removed`);
+      closePanels();
+      refresh();
+    } catch (e) { toast(e.message); }
+  });
 }
 
 // openCreateHost documents a device by hand (offline gear / planned kit). MAC required.
@@ -867,10 +890,13 @@ function openCreateHost() {
   openPanel("detail");
   $("create-host-form").onsubmit = async (e) => {
     e.preventDefault();
-    try {
-      const r = await post("/api/host/create", { mac: $("ch-mac").value, ip: $("ch-ip").value, display_name: $("ch-name").value, device_class: $("ch-class").value, model: $("ch-model").value, notes: $("ch-notes").value });
-      toast("Device added"); openHost(r.stable_id); refresh();
-    } catch (err) { toast(err.message); }
+    await mutate(async () => {
+      try {
+        const r = await post("/api/host/create", { mac: $("ch-mac").value, ip: $("ch-ip").value, display_name: $("ch-name").value, device_class: $("ch-class").value, model: $("ch-model").value, notes: $("ch-notes").value });
+        toast(r.warning ? "Device added — " + r.warning : "Device added");
+        openHost(r.stable_id); refresh();
+      } catch (err) { toast(err.message); }
+    });
   };
 }
 
@@ -889,10 +915,12 @@ function openCreateSubnet() {
   $("create-subnet-form").onsubmit = async (e) => {
     e.preventDefault();
     const vlan = $("cs-vlan").value ? Number($("cs-vlan").value) : undefined;
-    try {
-      await post("/api/subnet/create", { cidr: $("cs-cidr").value, name: $("cs-name").value, vlan });
-      toast("Subnet added"); closePanels(); refresh();
-    } catch (err) { toast(err.message); }
+    await mutate(async () => {
+      try {
+        await post("/api/subnet/create", { cidr: $("cs-cidr").value, name: $("cs-name").value, vlan });
+        toast("Subnet added"); closePanels(); refresh();
+      } catch (err) { toast(err.message); }
+    });
   };
 }
 
@@ -911,7 +939,7 @@ async function openConflicts() {
     const prov = `${cnt || 1} observation${(cnt || 1) === 1 ? "" : "s"}${last && !String(last).startsWith("0001") ? " · last " + fmtTime(last) : ""}`;
     const btn = admin
       ? `<button class="ghost keep" data-subject="${esc(c.subject)}" data-attr="${esc(c.attribute)}" data-value="${esc(val)}" data-source="${esc(src)}">Keep this</button>
-         <button class="ghost prefer" data-attr="${esc(c.attribute)}" data-source="${esc(src)}" title="Always prefer ${esc(src)} for ${esc(c.attribute)} — resolves this whole class of conflicts">Always prefer ${esc(src)}</button>`
+         <button class="ghost prefer" data-attr="${esc(c.attribute)}" data-source="${esc(src)}" title="Across ALL devices, always use ${esc(src)} for ${esc(c.attribute)} — resolves this whole class of conflicts">Always prefer ${esc(src)} (all devices)</button>`
       : "";
     return `<div class="cf-side"><div><b>${esc(val)}</b> <span class="src">(${esc(src)})</span></div><div class="muted-note">${esc(prov)}</div>${btn}</div>`;
   };
@@ -1046,13 +1074,25 @@ async function openHost(id) {
     <div class="merge-ctl"><select id="merge-target"><option value="">Merge another device into this one…</option>${otherHosts}</select><button class="ghost" id="merge-btn">Merge</button></div>
     <p class="muted-note">Use when two records are really the same physical device (dual-stack, randomized MAC, or an IP seen before its MAC). The selected device folds into this one; Split undoes it.</p>` : "";
 
+  const online = d.availability ? d.availability.online : (d.addresses || []).some((a) => a.state === "active");
+  const issues = [];
+  if (d.sec_findings) issues.push(`<a class="issue-badge ${d.sec_high ? "high" : "med"}" data-go="security">⚠ ${d.sec_findings} security finding${d.sec_findings > 1 ? "s" : ""}</a>`);
+  if (d.open_conflicts) issues.push(`<a class="issue-badge conflict" data-go="conflicts">⚠ ${d.open_conflicts} conflict${d.open_conflicts > 1 ? "s" : ""}</a>`);
+  // Hardware: lead with the specific model; show the coarse class as a quiet aside.
+  const hardware = esc(h.model || h.device_class || "—") +
+    ((h.device_class || h.os_guess) ? " " + confBadge(h.confidence) : "") +
+    (h.model && h.device_class && h.model !== h.device_class ? ` <span class="topo-sub">${esc(h.device_class)}</span>` : "");
+
   $("detail-body").innerHTML = `
     <h2><span class="dev-icon-lg" style="${iconStyle(d.icon_url, "var(--accent)")}"></span>${esc(h.display_name || "(unnamed)")}</h2>
+    <div class="detail-sub">
+      <span class="pill ${online ? "yes" : "no"}">${online ? "online" : "offline"}</span>
+      ${primaryIP ? `<span class="mono">${esc(primaryIP)}</span>` : ""}
+      ${issues.join("")}
+    </div>
     ${actions}
     <dl class="kv">
-      <dt>Stable ID</dt><dd class="mono">${esc(h.stable_id)}</dd>
-      <dt>Device / Hardware</dt><dd>${esc(h.device_class || "—")} ${h.device_class ? confBadge(h.confidence) : ""}</dd>
-      ${h.model ? `<dt>Model</dt><dd>${esc(h.model)}</dd>` : ""}
+      <dt>Hardware</dt><dd>${hardware}</dd>
       <dt>Operating System</dt><dd>${esc(h.os_guess || "—")} ${h.os_guess ? confBadge(h.confidence) : ""}</dd>
       ${h.firmware ? `<dt>Firmware</dt><dd class="mono">${esc(h.firmware)}</dd>` : ""}
       ${(h.tags || []).length ? `<dt>Tags</dt><dd><div class="tags">${tagChips(h.tags, false)}</div></dd>` : ""}
@@ -1060,6 +1100,7 @@ async function openHost(id) {
       <dt>First seen</dt><dd>${fmtTime(h.first_seen)}</dd>
       <dt>Last seen</dt><dd>${fmtTime(h.last_seen)}</dd>
       <dt>Notes</dt><dd>${esc(h.notes || "—")}</dd>
+      <dt class="muted-note">Identity</dt><dd class="mono muted-note">${esc(h.stable_id)}</dd>
     </dl>
     ${avBlock}
     <h3>Interfaces</h3>${ifaces}<h3>Addresses</h3>${addrs}<h3>Services</h3>${svcs}<h3>Topology</h3>${topo}
@@ -1069,6 +1110,10 @@ async function openHost(id) {
     ${(d.changes || []).length ? `<h3>Changes <span class="badge">${d.changes.length}</span></h3><div class="changes">${changes}</div>` : ""}
     <h3>Observation history <span class="badge">${(d.observations || []).length}</span></h3>
     <table class="obs"><tbody>${rows}</tbody></table>`;
+
+  for (const b of $("detail-body").querySelectorAll(".issue-badge[data-go]")) {
+    b.onclick = () => { closePanels(); if (b.dataset.go === "conflicts") openConflicts(); else showView("security"); };
+  }
 
   if (me.is_admin) {
     $("annotate-form").onsubmit = async (e) => {
@@ -1099,11 +1144,13 @@ async function openHost(id) {
         else if (k === "address") body.ip = b.dataset.ip;
         else if (k === "interface") body.mac = b.dataset.mac;
         else if (k === "service") { body.ip = b.dataset.ip; body.proto = b.dataset.proto; body.port = +b.dataset.port; }
-        try {
-          const r = await post("/api/host/delete-artifact", body);
-          toast(`Removed ${r.observations_removed} record(s)`);
-          openHost(id); refresh();
-        } catch (err) { toast(err.message); }
+        await mutate(async () => {
+          try {
+            const r = await post("/api/host/delete-artifact", body);
+            toast(`Removed ${r.observations_removed} record(s)`);
+            openHost(id); refresh();
+          } catch (err) { toast(err.message); }
+        });
       };
     }
     const mb = $("merge-btn");
@@ -1111,8 +1158,10 @@ async function openHost(id) {
       const sec = $("merge-target").value;
       if (!sec) return;
       if (!confirm(`Merge that device into “${h.display_name || h.stable_id}”? They'll be treated as one device.`)) return;
-      try { await post("/api/host/merge", { primary: h.stable_id, secondary: sec }); toast("Merged"); openHost(id); refresh(); }
-      catch (err) { toast(err.message); }
+      await mutate(async () => {
+        try { await post("/api/host/merge", { primary: h.stable_id, secondary: sec }); toast("Merged"); openHost(id); refresh(); }
+        catch (err) { toast(err.message); }
+      });
     };
     for (const b of $("detail-body").querySelectorAll(".unmerge")) {
       b.onclick = async () => {
@@ -1154,6 +1203,7 @@ async function openSettings() {
   $("settings-body").innerHTML = `
     <h2>Settings</h2>
     ${s.restart_pending ? `<div class="restart-banner"><span>A change needs a restart to apply.</span><button class="btn" id="btn-restart">Restart now</button></div>` : ""}
+    ${s.secret_decrypt_failures ? `<div class="restart-banner warn"><span>⚠ ${s.secret_decrypt_failures} stored secret(s) could not be decrypted — usually a backup restored onto a server with a different <code>secret.key</code>. Re-enter the affected credentials, or restore <code>secret.key</code> from the original server.</span></div>` : ""}
 
     <div class="settings-section"><h3>Server</h3>
       ${txt("set-listen", "Listen address (host:port)", e.api_listen_addr)}

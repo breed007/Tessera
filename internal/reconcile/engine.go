@@ -142,7 +142,9 @@ func (e *engine) currentOwner(ip string) (string, bool) {
 	if r == nil {
 		return "", false
 	}
-	w, ok := r.winner()
+	// Ownership is confidence-based (not manual-authoritative): a hand-entered
+	// binding must not yank an IP off a live, higher-confidence owner.
+	w, ok := r.winnerByConfidence()
 	if !ok {
 		return "", false
 	}

@@ -7,6 +7,7 @@ package settings
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 
 	"github.com/tessera/tessera/internal/config"
 	"github.com/tessera/tessera/internal/secret"
@@ -144,10 +145,29 @@ func (s *Service) Effective(ctx context.Context, base config.Config) (config.Con
 		if v, ok, _ := s.store.SettingGet(ctx, key); ok && v != "" {
 			if plain, err := s.cipher.Open(v); err == nil && plain != "" {
 				*dst = plain
+			} else if err != nil {
+				// A stored secret that won't decrypt (typically a restored backup
+				// from another server with a different master key). Don't silently
+				// drop it — that turns into "the UniFi poller just stopped working".
+				slog.Warn("settings: stored secret could not be decrypted — check the master key (secret.key)", "key", key)
 			}
 		}
 	}
 	return base, nil
+}
+
+// DecryptFailures counts persisted secrets that fail to decrypt with the current
+// master key (e.g. a backup restored onto a server with a different key).
+func (s *Service) DecryptFailures(ctx context.Context) int {
+	n := 0
+	for _, key := range []string{secUniFiUser, secUniFiPass, secUniFiKey, secSNMP, secFingerbank, secAlertURL} {
+		if v, ok, _ := s.store.SettingGet(ctx, key); ok && v != "" {
+			if _, err := s.cipher.Open(v); err != nil {
+				n++
+			}
+		}
+	}
+	return n
 }
 
 // Current returns the editable view for the UI plus which secrets are set.

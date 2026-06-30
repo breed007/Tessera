@@ -30,6 +30,10 @@ func (s *Server) handleBulk(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "stable_ids is required")
 		return
 	}
+	if len(req.StableIDs) > 2000 {
+		writeErr(w, http.StatusBadRequest, "too many devices in one bulk action (max 2000)")
+		return
+	}
 	switch req.Action {
 	case "expected", "ignored", "new", "add_tags", "forget":
 	default:

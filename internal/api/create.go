@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net"
 	"net/http"
@@ -37,41 +38,73 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	rec := func(attr observation.Attribute, value string) bool {
-		if _, err := s.sink.Record(ctx, observation.SourceManual, observation.SubjectMAC, mac, attr, value, manualConfidence); err != nil {
+	rec := func(attr observation.Attribute, value string, conf int) bool {
+		if _, err := s.sink.Record(ctx, observation.SourceManual, observation.SubjectMAC, mac, attr, value, conf); err != nil {
 			writeErr(w, http.StatusInternalServerError, err.Error())
 			return false
 		}
 		return true
 	}
+	warning := ""
 	if ip := strings.TrimSpace(req.IP); ip != "" {
 		norm, _, err := netid.NormalizeIP(ip)
 		if err != nil {
 			writeErr(w, http.StatusBadRequest, "bad ip")
 			return
 		}
-		if !rec(observation.AttrIPBinding, norm) {
+		// Documenting a device must NOT yank an in-use IP off the real host. If the
+		// IP is already owned by another device, skip the binding and warn; the
+		// address materializes on this host only when the IP is genuinely free.
+		if owner, ok := s.ipOwner(ctx, norm); ok && owner != "mac:"+mac {
+			warning = "IP " + norm + " is currently assigned to another device (" + owner + "); the device was added without it."
+		} else if !rec(observation.AttrIPBinding, norm, manualBindingConfidence) {
 			return
 		}
 	}
-	if v := strings.TrimSpace(req.DisplayName); v != "" && !rec(observation.AttrDisplayName, v) {
+	if v := strings.TrimSpace(req.DisplayName); v != "" && !rec(observation.AttrDisplayName, v, manualConfidence) {
 		return
 	}
-	if v := strings.TrimSpace(req.DeviceClass); v != "" && !rec(observation.AttrDeviceClass, v) {
+	if v := strings.TrimSpace(req.DeviceClass); v != "" && !rec(observation.AttrDeviceClass, v, manualConfidence) {
 		return
 	}
-	if v := strings.TrimSpace(req.Model); v != "" && !rec(observation.AttrModel, v) {
+	if v := strings.TrimSpace(req.Model); v != "" && !rec(observation.AttrModel, v, manualConfidence) {
 		return
 	}
-	if v := strings.TrimSpace(req.Notes); v != "" && !rec(observation.AttrNotes, v) {
+	if v := strings.TrimSpace(req.Notes); v != "" && !rec(observation.AttrNotes, v, manualConfidence) {
 		return
 	}
 	// A hand-added device is one the operator already knows about.
-	if !rec(observation.AttrIsExpected, "true") {
+	if !rec(observation.AttrIsExpected, "true", manualConfidence) {
 		return
 	}
 	s.reconcileNow(ctx)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "stable_id": "mac:" + mac})
+	resp := map[string]any{"ok": true, "stable_id": "mac:" + mac}
+	if warning != "" {
+		resp["warning"] = warning
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// manualBindingConfidence keeps a hand-entered IP↔MAC binding well below any live
+// discovery (~90–95) so documenting a device never steals an in-use address.
+const manualBindingConfidence = 50
+
+// ipOwner returns the stable_id of the host currently holding an IP, if any.
+func (s *Server) ipOwner(ctx context.Context, ip string) (string, bool) {
+	snap, err := s.store.LoadEntities(ctx)
+	if err != nil {
+		return "", false
+	}
+	stableByID := map[int64]string{}
+	for _, h := range snap.Hosts {
+		stableByID[h.ID] = h.StableID
+	}
+	for _, a := range snap.Addresses {
+		if a.IP == ip && a.HostID != nil {
+			return stableByID[*a.HostID], true
+		}
+	}
+	return "", false
 }
 
 // createSubnetRequest documents a network by hand. Seeds a manual subnet_hint.

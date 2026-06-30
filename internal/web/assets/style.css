@@ -274,6 +274,13 @@ td .art-del { margin-left: 0; }
 .merge-ctl select { flex: 1; padding: 5px 8px; background: var(--bg); border: 1px solid var(--hairline); border-radius: 5px; color: var(--text); font-size: 12px; }
 .merged-list { margin-bottom: 6px; }
 .tabs .add-btn { margin-left: auto; }
+/* Detail header sub-line + per-device issue badges */
+.detail-sub { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -2px 0 10px; }
+.issue-badge { cursor: pointer; font-size: 11px; padding: 1px 8px; border-radius: 10px; border: 1px solid; white-space: nowrap; }
+.issue-badge.high { color: var(--absent); border-color: var(--absent); }
+.issue-badge.med { color: #e0a23c; border-color: #e0a23c; }
+.issue-badge.conflict { color: #e0a23c; border-color: #e0a23c; }
+.restart-banner.warn { border-color: #e0a23c; }
 /* Tags */
 .tag-chip { display: inline-block; font-size: 10px; line-height: 1.6; padding: 0 8px; border-radius: 10px; color: var(--tc, var(--accent)); border: 1px solid var(--tc, var(--accent-dim)); white-space: nowrap; }
 .tag-chip.click { cursor: pointer; }

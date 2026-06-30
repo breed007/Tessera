@@ -70,6 +70,12 @@ func TestSecurityFindings(t *testing.T) {
 		t.Errorf("telnet (high) finding missing: %+v", d.Findings)
 	}
 
+	// The host's own detail surfaces its findings (telnet high + mysql medium).
+	hd := getJSON[HostDetail](t, ts.URL+"/api/host?id=mac:aa:bb:cc:00:00:01")
+	if hd.SecFindings != 2 || hd.SecHigh != 1 {
+		t.Errorf("host detail issues = %d findings / %d high, want 2/1", hd.SecFindings, hd.SecHigh)
+	}
+
 	// Suppress the telnet finding → it moves to Suppressed, high count drops to 0.
 	if r := authPost(t, ts.URL+"/api/security/suppress", map[string]any{
 		"stable_id": "mac:aa:bb:cc:00:00:01", "proto": "tcp", "port": 23, "note": "isolated VLAN",

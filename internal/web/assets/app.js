@@ -255,30 +255,120 @@ async function openSubnet(id) {
   openPanel("detail");
 }
 
-// renderTopology renders the educated network tree (full page): gateway →
-// switches → APs → clients, with the port + link speed each device connects via.
-async function renderTopology() {
+// Topology graph state: collapsed nodes (by stable_id) + the pan/zoom transform.
+const topoCollapsed = new Set();
+let topoView = { tx: 0, ty: 0, scale: 1 };
+let topoDrag = null;
+let topoPanInit = false;
+function topoApply() {
+  const g = document.getElementById("topo-g");
+  if (g) g.setAttribute("transform", `translate(${topoView.tx},${topoView.ty}) scale(${topoView.scale})`);
+}
+function initTopoPan() {
+  if (topoPanInit) return;
+  topoPanInit = true;
+  document.addEventListener("mousemove", (e) => {
+    if (!topoDrag) return;
+    topoView.tx = topoDrag.tx + (e.clientX - topoDrag.x);
+    topoView.ty = topoDrag.ty + (e.clientY - topoDrag.y);
+    topoApply();
+  });
+  document.addEventListener("mouseup", () => { topoDrag = null; });
+}
+
+// renderTopology draws the network as an interactive SVG node-link graph: gateway
+// → switches → APs → clients. Hierarchical layout, pan (drag), zoom (wheel),
+// collapsible subtrees, click-to-open. preserveView keeps the current pan/zoom
+// (used when toggling a node); a fresh load fits the graph to the canvas.
+async function renderTopology(preserveView) {
   const d = await getJSON("/api/topology");
-  const nodeHTML = (n) => {
-    const link = (n.port || n.speed)
-      ? `<span class="topo-link">${n.port ? "port " + esc(n.port) : ""}${n.speed ? " · " + esc(n.speed) : ""}</span>` : "";
-    const kids = (n.children || []).length ? `<div class="topo-children">${n.children.map(nodeHTML).join("")}</div>` : "";
-    return `<div class="topo-node">
-      <div class="topo-row" data-id="${esc(n.stable_id)}">
-        <span class="dev-icon" style="${iconStyle(n.icon_url, "var(--accent)")}"></span>
-        <span class="topo-name">${esc(n.name)}</span>
-        ${n.sub ? `<span class="topo-sub">${esc(n.sub)}</span>` : ""}
-        ${link}
-      </div>${kids}</div>`;
+  const roots = d.roots || [], unplaced = d.unplaced || [];
+  if (!roots.length) {
+    $("topology-body").innerHTML = `<h2>Network topology</h2><p class="muted-note">No topology yet — connect the UniFi controller (uplink + switch-port data builds the map).</p>`;
+    return;
+  }
+
+  const NODE_W = 168, NODE_H = 46, H_GAP = 20, V_GAP = 66, ROOT_GAP = 56;
+  let cursorX = 0;
+  const edges = [];
+  const layout = (n, depth, parent) => {
+    n._y = depth * (NODE_H + V_GAP);
+    if (parent) edges.push({ from: parent, to: n });
+    n._hasKids = (n.children || []).length > 0;
+    n._collapsed = topoCollapsed.has(n.stable_id);
+    const kids = n._collapsed ? [] : (n.children || []);
+    if (!kids.length) {
+      n._x = cursorX;
+      cursorX += NODE_W + H_GAP;
+    } else {
+      kids.forEach((k) => layout(k, depth + 1, n));
+      n._x = (kids[0]._x + kids[kids.length - 1]._x) / 2;
+    }
   };
-  const roots = (d.roots || []).map(nodeHTML).join("") || `<p class="muted-note">No topology yet — connect the UniFi controller (uplink + switch-port data builds the map).</p>`;
-  const unplaced = (d.unplaced || []).length
-    ? `<details class="topo-unplaced"><summary>Unplaced devices <span class="badge">${d.unplaced.length}</span></summary>${d.unplaced.map(nodeHTML).join("")}</details>`
-    : "";
+  roots.forEach((r, i) => { if (i) cursorX += ROOT_GAP; layout(r, 0, null); });
+
+  const nodes = [];
+  const collect = (n) => { nodes.push(n); if (!n._collapsed) (n.children || []).forEach(collect); };
+  roots.forEach(collect);
+  const maxX = Math.max(...nodes.map((n) => n._x)) + NODE_W;
+  const maxY = Math.max(...nodes.map((n) => n._y)) + NODE_H;
+
+  const edgeSVG = edges.map((e) => {
+    const x1 = e.from._x + NODE_W / 2, y1 = e.from._y + NODE_H;
+    const x2 = e.to._x + NODE_W / 2, y2 = e.to._y;
+    const my = (y1 + y2) / 2;
+    const lbl = [e.to.port ? "port " + e.to.port : "", e.to.speed || ""].filter(Boolean).join(" · ");
+    return `<path class="topo-edge" d="M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}"/>` +
+      (lbl ? `<text class="topo-elabel" x="${x2 + 6}" y="${y2 - 6}">${esc(lbl)}</text>` : "");
+  }).join("");
+
+  const nodeSVG = nodes.map((n) => {
+    const tog = n._hasKids ? `<button class="tnode-tog" data-tid="${esc(n.stable_id)}" title="${n._collapsed ? "Expand" : "Collapse"}">${n._collapsed ? "+" : "–"}</button>` : "";
+    return `<foreignObject x="${n._x}" y="${n._y}" width="${NODE_W}" height="${NODE_H}">
+      <div class="tnode" data-id="${esc(n.stable_id)}" xmlns="http://www.w3.org/1999/xhtml">
+        <span class="dev-icon" style="${iconStyle(n.icon_url, "var(--accent)")}"></span>
+        <span class="tnode-text"><span class="tnode-name">${esc(n.name)}</span>${n.sub ? `<span class="tnode-sub">${esc(n.sub)}</span>` : ""}</span>
+        ${tog}
+      </div></foreignObject>`;
+  }).join("");
+
   $("topology-body").innerHTML = `<h2>Network topology</h2>
-    <p class="muted-note">Built from UniFi uplinks and switch-port data. Click a device to open it.</p>
-    <div class="topo">${roots}</div>${unplaced}`;
-  for (const row of $("topology-body").querySelectorAll(".topo-row[data-id]:not([data-id=''])")) {
+    <div class="topo-toolbar"><button class="ghost" id="topo-fit">Fit</button><span class="muted-note">Drag to pan · scroll to zoom · click a device to open · ± collapses a subtree</span></div>
+    <div class="topo-canvas" id="topo-canvas"><svg id="topo-svg"><g id="topo-g"><g class="topo-edges">${edgeSVG}</g>${nodeSVG}</g></svg></div>
+    ${unplaced.length ? `<details class="topo-unplaced"><summary>Unplaced devices <span class="badge">${unplaced.length}</span></summary>${unplaced.map((u) => `<div class="topo-row" data-id="${esc(u.stable_id)}"><span class="dev-icon" style="${iconStyle(u.icon_url, "var(--accent)")}"></span>${esc(u.name)}${u.sub ? ` <span class="topo-sub">${esc(u.sub)}</span>` : ""}</div>`).join("")}</details>` : ""}`;
+
+  initTopoPan();
+  const canvas = $("topo-canvas"), svg = $("topo-svg");
+  const fit = () => {
+    const cw = canvas.clientWidth || 800, ch = canvas.clientHeight || 500;
+    const s = Math.min(cw / (maxX + 40), ch / (maxY + 40), 1.2);
+    topoView = { scale: s > 0 ? s : 1, tx: (cw - maxX * (s > 0 ? s : 1)) / 2, ty: 24 };
+    topoApply();
+  };
+  if (preserveView) topoApply(); else fit();
+  $("topo-fit").onclick = fit;
+  svg.onmousedown = (e) => { if (!e.target.closest(".tnode")) topoDrag = { x: e.clientX, y: e.clientY, tx: topoView.tx, ty: topoView.ty }; };
+  canvas.onwheel = (e) => {
+    e.preventDefault();
+    const f = e.deltaY < 0 ? 1.1 : 0.9;
+    const r = canvas.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+    topoView.tx = mx - (mx - topoView.tx) * f;
+    topoView.ty = my - (my - topoView.ty) * f;
+    topoView.scale *= f;
+    topoApply();
+  };
+  for (const el of canvas.querySelectorAll(".tnode[data-id]:not([data-id=''])")) {
+    el.onclick = (e) => { if (!e.target.closest(".tnode-tog")) openHost(el.dataset.id); };
+  }
+  for (const b of canvas.querySelectorAll(".tnode-tog")) {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      const id = b.dataset.tid;
+      topoCollapsed.has(id) ? topoCollapsed.delete(id) : topoCollapsed.add(id);
+      renderTopology(true);
+    };
+  }
+  for (const row of $("topology-body").querySelectorAll(".topo-unplaced .topo-row[data-id]:not([data-id=''])")) {
     row.style.cursor = "pointer";
     row.onclick = () => openHost(row.dataset.id);
   }

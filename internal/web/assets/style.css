@@ -333,6 +333,14 @@ td .art-del { margin-left: 0; }
 .ubar-track { height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; }
 .ubar-fill { display: block; height: 100%; border-radius: 4px; }
 .ubar-v { white-space: nowrap; color: var(--text); }
+/* Bulk selection */
+.sel-col { width: 28px; text-align: center; }
+.row-sel, #sel-all { cursor: pointer; }
+.bulk-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 10px; padding: 8px 12px; border: 1px solid var(--accent-dim); border-radius: 7px; background: var(--surface-raised); }
+.bulk-count { margin-right: 4px; color: var(--muted); font-size: 12px; }
+.bulk-count b { color: var(--text); }
+.bulk-bar .ghost { padding: 4px 10px; font-size: 12px; }
+.bulk-bar .bulk-clear { margin-left: auto; }
 .topo-unplaced .topo-children { margin-left: 0; padding-left: 0; border-left: none; }
 
 /* Discovery & scanning techniques */

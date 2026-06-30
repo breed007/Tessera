@@ -46,9 +46,11 @@
         <h2>Inventory</h2>
         <input type="search" id="host-search" class="search" placeholder="Search name, IP, MAC, vendor, model, tag…" autocomplete="off">
         <div id="inv-filterbar" class="filterbar"></div>
+        <div id="bulk-bar" class="bulk-bar hidden"></div>
         <table id="hosts">
           <thead>
             <tr>
+              <th id="sel-th" class="sel-col"></th>
               <th data-sort="name">Name</th>
               <th data-sort="device">Device / Hardware</th>
               <th data-sort="conf">Confidence</th>

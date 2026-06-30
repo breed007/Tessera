@@ -626,8 +626,11 @@ function renderHosts(hosts) {
       return av < bv ? -d : av > bv ? d : 0;
     });
   }
+  const isAdmin = me && me.is_admin;
+  const visibleIDs = rows.map((h) => h.stable_id);
   $("hosts-body").innerHTML = rows.map((h) => `
     <tr data-id="${esc(h.stable_id)}">
+      <td class="sel-col">${isAdmin ? `<input type="checkbox" class="row-sel" data-id="${esc(h.stable_id)}" ${selectedHosts.has(h.stable_id) ? "checked" : ""}>` : ""}</td>
       <td><span class="online-dot ${h.online ? "on" : "off"}" title="${h.online ? "online" : "offline"}"></span><span class="dev-icon" style="${iconStyle(h.icon_url, "var(--accent)")}"></span>${esc(h.display_name || "(unnamed)")}${(h.tags || []).length ? `<div class="tags">${tagChips(h.tags, true)}</div>` : ""}</td>
       <td>${esc(h.model || h.device_class || "—")}</td>
       <td class="conf">${confBadge(h.device_class || h.os_guess ? h.confidence : 0)}</td>
@@ -637,15 +640,77 @@ function renderHosts(hosts) {
       <td>${fmtTime(h.last_seen)}</td>
     </tr>`).join("");
   for (const tr of $("hosts-body").querySelectorAll("tr")) {
-    tr.onclick = (e) => { if (!e.target.closest(".tag-chip")) openHost(tr.dataset.id); };
+    tr.onclick = (e) => { if (!e.target.closest(".tag-chip") && !e.target.closest(".row-sel")) openHost(tr.dataset.id); };
   }
   for (const chip of $("hosts-body").querySelectorAll(".tag-chip.click")) {
     chip.onclick = () => { tagFilter = chip.dataset.tag; renderHosts(); renderTagFilterBar(); };
   }
+  // Multi-select (admin): row checkboxes + select-all over the visible rows.
+  if ($("sel-th")) $("sel-th").innerHTML = isAdmin ? `<input type="checkbox" id="sel-all" title="Select all shown">` : "";
+  for (const cb of $("hosts-body").querySelectorAll(".row-sel")) {
+    cb.onclick = (e) => { e.stopPropagation(); cb.checked ? selectedHosts.add(cb.dataset.id) : selectedHosts.delete(cb.dataset.id); renderBulkBar(); syncSelectAll(visibleIDs); };
+  }
+  if ($("sel-all")) {
+    syncSelectAll(visibleIDs);
+    $("sel-all").onclick = () => {
+      const on = $("sel-all").checked;
+      for (const id of visibleIDs) on ? selectedHosts.add(id) : selectedHosts.delete(id);
+      for (const cb of $("hosts-body").querySelectorAll(".row-sel")) cb.checked = on;
+      renderBulkBar();
+    };
+  }
+  renderBulkBar();
   for (const th of document.querySelectorAll("#hosts thead th[data-sort]")) {
     th.setAttribute("aria-sort", th.dataset.sort === hostSort.key ? (hostSort.dir === 1 ? "ascending" : "descending") : "none");
   }
   renderTagFilterBar();
+}
+
+// ── bulk selection / actions (admin) ─────────────────────────────────────────
+const selectedHosts = new Set();
+
+function syncSelectAll(visibleIDs) {
+  const all = $("sel-all");
+  if (!all) return;
+  const shown = visibleIDs.filter((id) => selectedHosts.has(id)).length;
+  all.checked = visibleIDs.length > 0 && shown === visibleIDs.length;
+  all.indeterminate = shown > 0 && shown < visibleIDs.length;
+}
+
+function renderBulkBar() {
+  const bar = $("bulk-bar");
+  if (!bar) return;
+  const n = selectedHosts.size;
+  if (n === 0) { bar.classList.add("hidden"); bar.innerHTML = ""; return; }
+  bar.classList.remove("hidden");
+  bar.innerHTML = `<span class="bulk-count"><b>${n}</b> selected</span>
+    <button class="ghost" data-bulk="expected">✓ Expected</button>
+    <button class="ghost" data-bulk="ignored">⊘ Ignore</button>
+    <button class="ghost" data-bulk="new">↩ New</button>
+    <button class="ghost" data-bulk="add_tags">+ Tag…</button>
+    <button class="ghost danger" data-bulk="forget">⌫ Forget</button>
+    <button class="ghost bulk-clear" id="bulk-clear">Clear</button>`;
+  for (const b of bar.querySelectorAll("[data-bulk]")) b.onclick = () => bulkAction(b.dataset.bulk);
+  $("bulk-clear").onclick = () => { selectedHosts.clear(); renderHosts(); };
+}
+
+async function bulkAction(action) {
+  const ids = [...selectedHosts];
+  if (!ids.length) return;
+  const body = { stable_ids: ids, action };
+  if (action === "add_tags") {
+    const tags = prompt(`Add tags to ${ids.length} device(s) (comma-separated):`);
+    if (tags === null) return;
+    body.tags = splitList(tags);
+    if (!body.tags.length) return;
+  }
+  if (action === "forget" && !confirm(`Forget ${ids.length} device(s)?\n\nThis permanently deletes their stored history and annotations. Devices still on the network are rediscovered as new on the next scan.`)) return;
+  try {
+    const r = await post("/api/hosts/bulk", body);
+    toast(`${action === "forget" ? "Forgot" : "Updated"} ${r.affected} device(s)`);
+    selectedHosts.clear();
+    refresh();
+  } catch (e) { toast(e.message); }
 }
 
 // renderTagFilterBar shows the active tag filter (with a clear button) + saved views.

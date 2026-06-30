@@ -173,6 +173,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/host/merge", s.handleMergeHosts)
 	mux.HandleFunc("POST /api/host/unmerge", s.handleUnmergeHost)
 	mux.HandleFunc("POST /api/host/create", s.handleCreateHost)
+	mux.HandleFunc("POST /api/hosts/bulk", s.handleBulk)
 	mux.HandleFunc("POST /api/subnet/create", s.handleCreateSubnet)
 	mux.HandleFunc("POST /api/subnet/rescan", s.handleRescanSubnet)
 	mux.HandleFunc("POST /api/conflict/resolve", s.handleResolveConflict)

@@ -225,6 +225,54 @@ func TestDeleteArtifact(t *testing.T) {
 	}
 }
 
+func TestBulkActions(t *testing.T) {
+	ts := setup(t)
+	const id = "mac:b8:27:eb:11:22:33"
+	// Bulk mark expected.
+	r := authPost(t, ts.URL+"/api/hosts/bulk", map[string]any{"stable_ids": []string{id}, "action": "expected"})
+	if r.StatusCode != 200 {
+		t.Fatalf("bulk expected → %d", r.StatusCode)
+	}
+	var resp struct {
+		Affected int `json:"affected"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&resp)
+	r.Body.Close()
+	if resp.Affected != 1 {
+		t.Fatalf("affected = %d, want 1", resp.Affected)
+	}
+	d := getJSON[HostDetail](t, ts.URL+"/api/host?id="+id)
+	if !d.Host.IsExpected {
+		t.Errorf("host should be expected after bulk")
+	}
+	// Bulk add tags (merges with existing).
+	r2 := authPost(t, ts.URL+"/api/hosts/bulk", map[string]any{"stable_ids": []string{id}, "action": "add_tags", "tags": []string{"iot", "lab"}})
+	r2.Body.Close()
+	d2 := getJSON[HostDetail](t, ts.URL+"/api/host?id="+id)
+	if len(d2.Host.Tags) != 2 {
+		t.Errorf("tags = %v, want [iot lab]", d2.Host.Tags)
+	}
+	// Unknown action → 400; empty selection → 400.
+	for _, bad := range []map[string]any{
+		{"stable_ids": []string{id}, "action": "nope"},
+		{"stable_ids": []string{}, "action": "expected"},
+	} {
+		rb := authPost(t, ts.URL+"/api/hosts/bulk", bad)
+		rb.Body.Close()
+		if rb.StatusCode != 400 {
+			t.Errorf("bad bulk %v → %d, want 400", bad, rb.StatusCode)
+		}
+	}
+	// Bulk forget removes the device.
+	rf := authPost(t, ts.URL+"/api/hosts/bulk", map[string]any{"stable_ids": []string{id}, "action": "forget"})
+	rf.Body.Close()
+	gone := authGet(t, ts.URL+"/api/host?id="+id)
+	gone.Body.Close()
+	if gone.StatusCode != 404 {
+		t.Errorf("after bulk forget, host → %d, want 404", gone.StatusCode)
+	}
+}
+
 func TestCreateHost(t *testing.T) {
 	ts := setup(t)
 	// Bad MAC → 400.

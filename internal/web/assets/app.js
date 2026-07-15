@@ -1320,6 +1320,16 @@ async function openSettings() {
       <p class="muted-note">dnsmasq-family lease files (dnsmasq, Pi-hole, OpenWrt) readable on this host — e.g. <code>/var/lib/misc/dnsmasq.leases</code> or <code>/etc/pihole/dhcp.leases</code>. Leases sharpen IP↔MAC↔hostname and mark addresses reserved vs dynamic. UniFi reservations are ingested automatically by the UniFi poller. Applies after a restart.</p>
     </div>
 
+    <div class="settings-section"><h3>DNS records ${statusBadge("dns")}</h3>
+      ${chk("set-dns-en", "Ingest authoritative name↔IP records", e.dns_enabled)}
+      ${txt("set-dns-files", "Hosts-format file paths (comma-separated)", (e.dns_hosts_files || []).join(", "))}
+      <p class="muted-note">Hosts-format files readable on this host — Pi-hole <code>/etc/pihole/custom.list</code>, dnsmasq/Unbound host files, <code>/etc/hosts</code>. DNS names help name devices; if they disagree with UniFi/rDNS, resolve with a "prefer dns for hostname" precedence rule in Conflicts.</p>
+      ${txt("set-dns-ag-url", "AdGuard Home URL (optional)", e.dns_adguard_url)}
+      ${txt("set-dns-ag-user", "AdGuard user", e.dns_adguard_user)}
+      ${secField("set-dns-ag-pass", "AdGuard password", flags.adguard_password_set)}
+      <button class="btn" id="btn-test-dns">Test AdGuard</button><span class="test-result" id="tr-dns"></span>
+    </div>
+
     <div class="settings-section"><h3>Discovery &amp; scanning techniques</h3>
       <p class="muted-note">Every technique is on by default — uncheck any you don't want. Passive techniques run only when the sensor is enabled; active techniques only when the active prober is. All scanning is read-only toward the network.</p>
       <h4 class="sub">Passive (capture)</h4>
@@ -1463,6 +1473,9 @@ function wireSettings(canSec) {
   if ($("btn-test-px")) $("btn-test-px").onclick = () => runTest("/api/test/proxmox", "tr-px", {
     base_url: val("set-px-url"), verify_tls: checked("set-px-verify"), token: $("set-px-token").value,
   });
+  if ($("btn-test-dns")) $("btn-test-dns").onclick = () => runTest("/api/test/dns", "tr-dns", {
+    url: val("set-dns-ag-url"), user: val("set-dns-ag-user"), password: $("set-dns-ag-pass").value,
+  });
   $("btn-test-snmp").onclick = () => runTest("/api/test/snmp", "tr-snmp", { ip: val("set-snmp-ip"), community: splitList(val("set-snmp-comms"))[0] || "" });
   $("btn-test-fb").onclick = () => runTest("/api/test/fingerbank", "tr-fb", { key: $("set-fb-key").value });
   $("btn-test-alert").onclick = () => runTest("/api/test/alert", "tr-alert", { kind: $("set-al-kind").value, url: $("set-al-url").value });
@@ -1542,12 +1555,15 @@ function wireSettings(canSec) {
       alert_risky_service: checked("set-al-risk"),
       forget_dormant_enabled: checked("set-prune-en"), forget_dormant_days: +val("set-prune-days") || 30,
       dhcp_enabled: checked("set-dhcp-en"), dhcp_lease_files: splitList(val("set-dhcp-files")),
+      dns_enabled: checked("set-dns-en"), dns_hosts_files: splitList(val("set-dns-files")),
+      dns_adguard_url: val("set-dns-ag-url"), dns_adguard_user: val("set-dns-ag-user"),
     };
     const secrets = {};
     if (canSec) {
       const add = (k, id) => { const v = secInput(id); if (v !== undefined) secrets[k] = v; };
       add("unifi_username", "set-unifi-user"); add("unifi_password", "set-unifi-pass"); add("unifi_api_key", "set-unifi-key");
       add("proxmox_token", "set-px-token");
+      add("adguard_password", "set-dns-ag-pass");
       add("fingerbank_key", "set-fb-key"); add("alert_url", "set-al-url");
     }
     try { await api("PUT", "/api/settings", { editable, secrets }); toast("Saved — restart to apply"); openSettings(); }

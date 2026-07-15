@@ -10,6 +10,7 @@ import (
 	"github.com/tessera/tessera/internal/account"
 	"github.com/tessera/tessera/internal/alert"
 	"github.com/tessera/tessera/internal/collector/active"
+	"github.com/tessera/tessera/internal/collector/dns"
 	"github.com/tessera/tessera/internal/collector/fingerbank"
 	"github.com/tessera/tessera/internal/collector/proxmox"
 	"github.com/tessera/tessera/internal/collector/unifi"
@@ -203,6 +204,29 @@ func (s *Server) handleTestProxmox(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	n, err := proxmox.Test(ctx, proxmox.Config{BaseURL: req.BaseURL, Token: tok, VerifyTLS: req.VerifyTLS})
 	testResult(w, fmt.Sprintf("%d node(s)", n), err)
+}
+
+func (s *Server) handleTestDNS(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireAdmin(w, r); !ok {
+		return
+	}
+	var req struct {
+		URL      string `json:"url"`
+		User     string `json:"user"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad JSON")
+		return
+	}
+	pass := req.Password
+	if pass == "" {
+		pass = s.cfg.Secrets.AdGuardPassword
+	}
+	ctx, cancel := contextWithTimeout(r, 15*time.Second)
+	defer cancel()
+	n, err := dns.TestAdGuard(ctx, dns.Config{AdGuardURL: req.URL, AdGuardUser: req.User, AdGuardPass: pass})
+	testResult(w, fmt.Sprintf("%d DNS rewrite(s)", n), err)
 }
 
 func (s *Server) handleTestFingerbank(w http.ResponseWriter, r *http.Request) {

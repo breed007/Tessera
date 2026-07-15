@@ -128,6 +128,20 @@ dhcp:
   lease_files: []                      # e.g. ["/var/lib/misc/dnsmasq.leases"]
   interval: 5m                         # re-read cadence
 
+dns:
+  # Ingest authoritative name<->IP records so devices get their real DNS names
+  # (and those names can win the hostname conflict against coarser sources via a
+  # "prefer dns for hostname" precedence rule). Two source types:
+  #   - hosts_files: hosts-format files readable on this host (Pi-hole
+  #     /etc/pihole/custom.list, dnsmasq/Unbound host files, /etc/hosts).
+  #   - AdGuard Home: pulls DNS rewrites (custom A records) over the REST API.
+  enabled: false
+  hosts_files: []                      # e.g. ["/etc/pihole/custom.list", "/etc/hosts"]
+  adguard_url: ""                      # e.g. http://adguard.lan:3000  (blank = off)
+  adguard_user: ""                     # AdGuard web admin user (blank = no auth)
+  interval: 5m                         # re-read cadence
+  # adguard password via env: TESSERA_ADGUARD_PASSWORD=...
+
 reconcile:
   stale_after: 24h
   free_after: 168h

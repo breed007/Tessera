@@ -20,6 +20,7 @@ import (
 	"github.com/tessera/tessera/internal/collector"
 	"github.com/tessera/tessera/internal/collector/active"
 	"github.com/tessera/tessera/internal/collector/dhcp"
+	"github.com/tessera/tessera/internal/collector/dns"
 	"github.com/tessera/tessera/internal/collector/proxmox"
 	"github.com/tessera/tessera/internal/collector/fingerbank"
 	"github.com/tessera/tessera/internal/collector/passive"
@@ -250,6 +251,15 @@ func buildCollectors(cfg config.Config, st store.Store, log *slog.Logger) ([]col
 		d := dhcp.New(dhcp.Config{Files: cfg.DHCP.LeaseFiles, Interval: cfg.DHCP.Interval})
 		cs = append(cs, d)
 		log.Info("collector enabled", "name", d.Name(), "lease_files", len(cfg.DHCP.LeaseFiles))
+	}
+
+	if cfg.DNS.Enabled && (len(cfg.DNS.HostsFiles) > 0 || cfg.DNS.AdGuardURL != "") {
+		d := dns.New(dns.Config{
+			HostsFiles: cfg.DNS.HostsFiles, AdGuardURL: cfg.DNS.AdGuardURL,
+			AdGuardUser: cfg.DNS.AdGuardUser, AdGuardPass: cfg.Secrets.AdGuardPassword, Interval: cfg.DNS.Interval,
+		})
+		cs = append(cs, d)
+		log.Info("collector enabled", "name", d.Name(), "hosts_files", len(cfg.DNS.HostsFiles), "adguard", cfg.DNS.AdGuardURL != "")
 	}
 
 	if cfg.Proxmox.Enabled && cfg.Proxmox.BaseURL != "" {

@@ -194,6 +194,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("DELETE /api/users/{id}", s.handleDeleteUser)
 	mux.HandleFunc("POST /api/test/unifi", s.handleTestUniFi)
 	mux.HandleFunc("POST /api/test/proxmox", s.handleTestProxmox)
+	mux.HandleFunc("POST /api/test/dns", s.handleTestDNS)
 	mux.HandleFunc("POST /api/test/snmp", s.handleTestSNMP)
 	mux.HandleFunc("POST /api/test/fingerbank", s.handleTestFingerbank)
 	mux.HandleFunc("POST /api/test/alert", s.handleTestAlert)

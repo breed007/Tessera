@@ -17,6 +17,7 @@ type Config struct {
 	Proxmox     Proxmox     `yaml:"proxmox"`
 	Fingerbank  Fingerbank  `yaml:"fingerbank"`
 	DHCP        DHCP        `yaml:"dhcp"`
+	DNS         DNS         `yaml:"dns"`
 	Reconcile   Reconcile   `yaml:"reconcile"`
 	Storage     Storage     `yaml:"storage"`
 	API         API         `yaml:"api"`
@@ -182,6 +183,17 @@ type Proxmox struct {
 	PollInterval time.Duration `yaml:"poll_interval"`
 }
 
+// DNS configures ingestion of authoritative name↔IP records: hosts-format files
+// (Pi-hole/dnsmasq/Unbound//etc/hosts) and AdGuard Home rewrites. Off by default.
+// The AdGuard password is a secret (env TESSERA_ADGUARD_PASSWORD).
+type DNS struct {
+	Enabled     bool          `yaml:"enabled"`
+	HostsFiles  []string      `yaml:"hosts_files"`
+	AdGuardURL  string        `yaml:"adguard_url"`  // http://adguard.lan:3000
+	AdGuardUser string        `yaml:"adguard_user"` // web admin user
+	Interval    time.Duration `yaml:"interval"`
+}
+
 // DHCP configures ingestion of DHCP server lease tables (dnsmasq-family lease
 // files for now). Off by default; lease files are read from the Tessera host's
 // filesystem (no auth).
@@ -203,6 +215,7 @@ type Secrets struct {
 	UniFiPassword   string
 	UniFiAPIKey     string
 	ProxmoxToken    string // Proxmox VE API token (user@realm!tokenid=secret)
+	AdGuardPassword string // AdGuard Home web admin password (DNS ingestion)
 	FingerbankKey   string
 	SNMPCommunity   string
 	APIToken        string // optional bearer token for the HTTP API (§M8)
@@ -252,6 +265,10 @@ func Default() Config {
 			PollInterval: 5 * time.Minute,
 		},
 		DHCP: DHCP{
+			Enabled:  false,
+			Interval: 5 * time.Minute,
+		},
+		DNS: DNS{
 			Enabled:  false,
 			Interval: 5 * time.Minute,
 		},

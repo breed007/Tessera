@@ -32,6 +32,7 @@ const (
 	SourceProxmox      Source = "proxmox" // Proxmox VE VM/CT inventory
 	SourceFingerbank   Source = "fingerbank"
 	SourceDHCPLeases   Source = "dhcp_leases" // gateway/server DHCP lease table (dnsmasq, …)
+	SourceDNS          Source = "dns"         // authoritative name↔IP records (hosts files, AdGuard)
 	SourceManual       Source = "manual"
 )
 
@@ -41,7 +42,7 @@ var validSources = map[Source]bool{
 	SourcePassiveTLS: true, SourceActiveICMP: true, SourceActiveARP: true,
 	SourceActiveTCP: true, SourceActiveUDP: true, SourceActiveTCPBeh: true, SourceActiveRDNS: true,
 	SourceActiveSNMP: true, SourceInferred: true,
-	SourceUniFi: true, SourceProxmox: true, SourceFingerbank: true, SourceDHCPLeases: true, SourceManual: true,
+	SourceUniFi: true, SourceProxmox: true, SourceFingerbank: true, SourceDHCPLeases: true, SourceDNS: true, SourceManual: true,
 }
 
 // SubjectType is what the subject identifier refers to (§3.1).

@@ -193,6 +193,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("PUT /api/users/{id}", s.handleUpdateUser)
 	mux.HandleFunc("DELETE /api/users/{id}", s.handleDeleteUser)
 	mux.HandleFunc("POST /api/test/unifi", s.handleTestUniFi)
+	mux.HandleFunc("POST /api/test/proxmox", s.handleTestProxmox)
 	mux.HandleFunc("POST /api/test/snmp", s.handleTestSNMP)
 	mux.HandleFunc("POST /api/test/fingerbank", s.handleTestFingerbank)
 	mux.HandleFunc("POST /api/test/alert", s.handleTestAlert)

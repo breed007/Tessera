@@ -1260,6 +1260,15 @@ async function openSettings() {
       <button class="btn" id="btn-test-unifi">Test connection</button><span class="test-result" id="tr-unifi"></span>
     </div>
 
+    <div class="settings-section"><h3>Proxmox VE ${statusBadge("proxmox")}</h3>
+      ${chk("set-px-en", "Enabled", e.proxmox_enabled)}
+      ${txt("set-px-url", "Base URL (e.g. https://proxmox.lan:8006)", e.proxmox_base_url)}
+      <p class="muted-note">Pulls VM/CT inventory so guests get named + classified from the hypervisor. Create a read-only API token: Datacenter → API Tokens (grant <code>PVEAuditor</code> on <code>/</code>). Paste the full <code>user@realm!tokenid=secret</code>.</p>
+      ${chk("set-px-verify", "Verify TLS", e.proxmox_verify_tls)}
+      ${secField("set-px-token", "API token", flags.proxmox_token_set)}
+      <button class="btn" id="btn-test-px">Test connection</button><span class="test-result" id="tr-px"></span>
+    </div>
+
     <div class="settings-section"><h3>SNMP</h3>
       ${txt("set-snmp-comms", "Community strings (comma-separated, tried in order)", (e.snmp_communities || []).join(", "))}
       <div class="field"><label>Test against device IP</label><input type="text" id="set-snmp-ip" placeholder="10.0.0.1"></div>
@@ -1451,6 +1460,9 @@ function wireSettings(canSec) {
     base_url: val("set-unifi-url"), path_prefix: val("set-unifi-prefix"), site: val("set-unifi-site"),
     verify_tls: checked("set-unifi-verify"), username: $("set-unifi-user").value, password: $("set-unifi-pass").value, api_key: $("set-unifi-key").value,
   });
+  if ($("btn-test-px")) $("btn-test-px").onclick = () => runTest("/api/test/proxmox", "tr-px", {
+    base_url: val("set-px-url"), verify_tls: checked("set-px-verify"), token: $("set-px-token").value,
+  });
   $("btn-test-snmp").onclick = () => runTest("/api/test/snmp", "tr-snmp", { ip: val("set-snmp-ip"), community: splitList(val("set-snmp-comms"))[0] || "" });
   $("btn-test-fb").onclick = () => runTest("/api/test/fingerbank", "tr-fb", { key: $("set-fb-key").value });
   $("btn-test-alert").onclick = () => runTest("/api/test/alert", "tr-alert", { kind: $("set-al-kind").value, url: $("set-al-url").value });
@@ -1508,6 +1520,7 @@ function wireSettings(canSec) {
       api_listen_addr: val("set-listen"), tls_enabled: checked("set-tls"),
       unifi_enabled: checked("set-unifi-en"), unifi_base_url: val("set-unifi-url"), unifi_path_prefix: val("set-unifi-prefix"),
       unifi_site: val("set-unifi-site"), unifi_verify_tls: checked("set-unifi-verify"),
+      proxmox_enabled: checked("set-px-en"), proxmox_base_url: val("set-px-url"), proxmox_verify_tls: checked("set-px-verify"),
       fingerbank_enabled: checked("set-fb-en"), fingerbank_mode: $("set-fb-mode").value,
       active_probe_enabled: checked("set-ap-en"),
       active_probe_subnets: splitList(val("set-ap-subnets")),
@@ -1534,6 +1547,7 @@ function wireSettings(canSec) {
     if (canSec) {
       const add = (k, id) => { const v = secInput(id); if (v !== undefined) secrets[k] = v; };
       add("unifi_username", "set-unifi-user"); add("unifi_password", "set-unifi-pass"); add("unifi_api_key", "set-unifi-key");
+      add("proxmox_token", "set-px-token");
       add("fingerbank_key", "set-fb-key"); add("alert_url", "set-al-url");
     }
     try { await api("PUT", "/api/settings", { editable, secrets }); toast("Saved — restart to apply"); openSettings(); }

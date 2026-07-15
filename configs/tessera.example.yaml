@@ -110,6 +110,16 @@ fingerbank:
   # db_path: /var/lib/tessera/fingerbank.db   # required for mode: local_db
   # api key via env: TESSERA_FINGERBANK_KEY  (required for mode: api)
 
+proxmox:
+  # Read-only Proxmox VE collector: pulls VM/CT inventory so guests get named +
+  # classified from the hypervisor (otherwise they show as bare Proxmox MACs).
+  # Create a read-only API token (Datacenter -> API Tokens, PVEAuditor on /).
+  enabled: false
+  base_url: ""            # e.g. https://proxmox.lan:8006
+  verify_tls: false       # PVE ships a self-signed cert
+  poll_interval: 5m
+  # token via env: TESSERA_PROXMOX_TOKEN=user@realm!tokenid=secret
+
 dhcp:
   # Ingest DHCP server lease tables (dnsmasq-family lease files: dnsmasq, Pi-hole,
   # OpenWrt). Sharpens IP<->MAC<->hostname and marks addresses reserved vs dynamic.

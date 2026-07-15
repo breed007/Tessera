@@ -14,6 +14,7 @@ type Config struct {
 	ActiveProbe ActiveProbe `yaml:"active_probe"`
 	Discovery   Discovery   `yaml:"discovery"`
 	UniFi       UniFi       `yaml:"unifi"`
+	Proxmox     Proxmox     `yaml:"proxmox"`
 	Fingerbank  Fingerbank  `yaml:"fingerbank"`
 	DHCP        DHCP        `yaml:"dhcp"`
 	Reconcile   Reconcile   `yaml:"reconcile"`
@@ -172,6 +173,15 @@ type Reconcile struct {
 	ForgetDormantDays    int  `yaml:"forget_dormant_days"`
 }
 
+// Proxmox configures the read-only Proxmox VE collector (VM/CT inventory). The
+// API token is a secret (env TESSERA_PROXMOX_TOKEN). Off by default.
+type Proxmox struct {
+	Enabled      bool          `yaml:"enabled"`
+	BaseURL      string        `yaml:"base_url"`   // https://proxmox.lan:8006
+	VerifyTLS    bool          `yaml:"verify_tls"` // self-signed PVE cert → false
+	PollInterval time.Duration `yaml:"poll_interval"`
+}
+
 // DHCP configures ingestion of DHCP server lease tables (dnsmasq-family lease
 // files for now). Off by default; lease files are read from the Tessera host's
 // filesystem (no auth).
@@ -192,6 +202,7 @@ type Secrets struct {
 	UniFiUsername   string
 	UniFiPassword   string
 	UniFiAPIKey     string
+	ProxmoxToken    string // Proxmox VE API token (user@realm!tokenid=secret)
 	FingerbankKey   string
 	SNMPCommunity   string
 	APIToken        string // optional bearer token for the HTTP API (§M8)
@@ -234,6 +245,11 @@ func Default() Config {
 			Rate:          FingerbankRate{MaxPerHour: 250, Burst: 10},
 			CacheTTL:      720 * time.Hour,
 			SubmitUnknown: false,
+		},
+		Proxmox: Proxmox{
+			Enabled:      false,
+			VerifyTLS:    false,
+			PollInterval: 5 * time.Minute,
 		},
 		DHCP: DHCP{
 			Enabled:  false,

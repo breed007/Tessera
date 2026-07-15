@@ -20,6 +20,7 @@ import (
 	"github.com/tessera/tessera/internal/collector"
 	"github.com/tessera/tessera/internal/collector/active"
 	"github.com/tessera/tessera/internal/collector/dhcp"
+	"github.com/tessera/tessera/internal/collector/proxmox"
 	"github.com/tessera/tessera/internal/collector/fingerbank"
 	"github.com/tessera/tessera/internal/collector/passive"
 	"github.com/tessera/tessera/internal/collector/unifi"
@@ -249,6 +250,14 @@ func buildCollectors(cfg config.Config, st store.Store, log *slog.Logger) ([]col
 		d := dhcp.New(dhcp.Config{Files: cfg.DHCP.LeaseFiles, Interval: cfg.DHCP.Interval})
 		cs = append(cs, d)
 		log.Info("collector enabled", "name", d.Name(), "lease_files", len(cfg.DHCP.LeaseFiles))
+	}
+
+	if cfg.Proxmox.Enabled && cfg.Proxmox.BaseURL != "" {
+		px := proxmox.NewPoller(proxmox.Config{
+			BaseURL: cfg.Proxmox.BaseURL, VerifyTLS: cfg.Proxmox.VerifyTLS, Token: cfg.Secrets.ProxmoxToken,
+		}, cfg.Proxmox.PollInterval, log)
+		cs = append(cs, px)
+		log.Info("collector enabled", "name", px.Name(), "base_url", cfg.Proxmox.BaseURL)
 	}
 
 	// Fingerbank is privacy-relevant and OFF by default (§7): only built when

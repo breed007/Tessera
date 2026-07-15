@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/tessera/tessera/internal/alert"
 	"github.com/tessera/tessera/internal/collector/active"
 	"github.com/tessera/tessera/internal/collector/fingerbank"
+	"github.com/tessera/tessera/internal/collector/proxmox"
 	"github.com/tessera/tessera/internal/collector/unifi"
 	"github.com/tessera/tessera/internal/settings"
 )
@@ -178,6 +180,29 @@ func (s *Server) handleTestSNMP(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	name, err := active.TestSNMP(ctx, req.IP, req.Community)
 	testResult(w, "sysName: "+name, err)
+}
+
+func (s *Server) handleTestProxmox(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireAdmin(w, r); !ok {
+		return
+	}
+	var req struct {
+		BaseURL   string `json:"base_url"`
+		Token     string `json:"token"`
+		VerifyTLS bool   `json:"verify_tls"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad JSON")
+		return
+	}
+	tok := req.Token
+	if tok == "" {
+		tok = s.cfg.Secrets.ProxmoxToken // fall back to the saved secret
+	}
+	ctx, cancel := contextWithTimeout(r, 20*time.Second)
+	defer cancel()
+	n, err := proxmox.Test(ctx, proxmox.Config{BaseURL: req.BaseURL, Token: tok, VerifyTLS: req.VerifyTLS})
+	testResult(w, fmt.Sprintf("%d node(s)", n), err)
 }
 
 func (s *Server) handleTestFingerbank(w http.ResponseWriter, r *http.Request) {

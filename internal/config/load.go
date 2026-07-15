@@ -13,6 +13,7 @@ const (
 	EnvUniFiUsername   = "TESSERA_UNIFI_USERNAME"
 	EnvUniFiPassword   = "TESSERA_UNIFI_PASSWORD"
 	EnvUniFiAPIKey     = "TESSERA_UNIFI_API_KEY"
+	EnvProxmoxToken    = "TESSERA_PROXMOX_TOKEN"
 	EnvFingerbankKey   = "TESSERA_FINGERBANK_KEY"
 	EnvSNMPCommunity   = "TESSERA_SNMP_COMMUNITY"
 	EnvAPIToken        = "TESSERA_API_TOKEN"
@@ -60,6 +61,7 @@ func loadSecrets(cfg *Config) {
 		UniFiUsername:   os.Getenv(EnvUniFiUsername),
 		UniFiPassword:   os.Getenv(EnvUniFiPassword),
 		UniFiAPIKey:     os.Getenv(EnvUniFiAPIKey),
+		ProxmoxToken:    os.Getenv(EnvProxmoxToken),
 		FingerbankKey:   os.Getenv(EnvFingerbankKey),
 		SNMPCommunity:   os.Getenv(EnvSNMPCommunity),
 		APIToken:        os.Getenv(EnvAPIToken),

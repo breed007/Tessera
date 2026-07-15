@@ -26,6 +26,7 @@ const (
 	secUniFiUser  = "secret.unifi_username"
 	secUniFiPass  = "secret.unifi_password"
 	secUniFiKey   = "secret.unifi_api_key"
+	secProxmox    = "secret.proxmox_token"
 	secSNMP       = "secret.snmp_community"
 	secFingerbank = "secret.fingerbank_key"
 	secAlertURL   = "secret.alert_webhook_url"
@@ -41,6 +42,10 @@ type Editable struct {
 	UniFiPathPrefix string `json:"unifi_path_prefix"`
 	UniFiSite       string `json:"unifi_site"`
 	UniFiVerifyTLS  bool   `json:"unifi_verify_tls"`
+
+	ProxmoxEnabled   bool   `json:"proxmox_enabled"`
+	ProxmoxBaseURL   string `json:"proxmox_base_url"`
+	ProxmoxVerifyTLS bool   `json:"proxmox_verify_tls"`
 
 	FingerbankEnabled bool   `json:"fingerbank_enabled"`
 	FingerbankMode    string `json:"fingerbank_mode"`
@@ -97,6 +102,7 @@ type SecretsInput struct {
 	UniFiUsername *string `json:"unifi_username,omitempty"`
 	UniFiPassword *string `json:"unifi_password,omitempty"`
 	UniFiAPIKey   *string `json:"unifi_api_key,omitempty"`
+	ProxmoxToken  *string `json:"proxmox_token,omitempty"`
 	SNMPCommunity *string `json:"snmp_community,omitempty"`
 	FingerbankKey *string `json:"fingerbank_key,omitempty"`
 	AlertURL      *string `json:"alert_url,omitempty"`
@@ -107,6 +113,7 @@ type SecretFlags struct {
 	UniFiUsername bool `json:"unifi_username_set"`
 	UniFiPassword bool `json:"unifi_password_set"`
 	UniFiAPIKey   bool `json:"unifi_api_key_set"`
+	ProxmoxToken  bool `json:"proxmox_token_set"`
 	SNMPCommunity bool `json:"snmp_community_set"`
 	FingerbankKey bool `json:"fingerbank_key_set"`
 	AlertURL      bool `json:"alert_url_set"`
@@ -139,7 +146,7 @@ func (s *Service) Effective(ctx context.Context, base config.Config) (config.Con
 	// Decrypt secret overrides (DB wins over env when set).
 	for key, dst := range map[string]*string{
 		secUniFiUser: &base.Secrets.UniFiUsername, secUniFiPass: &base.Secrets.UniFiPassword,
-		secUniFiKey: &base.Secrets.UniFiAPIKey, secSNMP: &base.Secrets.SNMPCommunity,
+		secUniFiKey: &base.Secrets.UniFiAPIKey, secProxmox: &base.Secrets.ProxmoxToken, secSNMP: &base.Secrets.SNMPCommunity,
 		secFingerbank: &base.Secrets.FingerbankKey, secAlertURL: &base.Secrets.AlertWebhookURL,
 	} {
 		if v, ok, _ := s.store.SettingGet(ctx, key); ok && v != "" {
@@ -160,7 +167,7 @@ func (s *Service) Effective(ctx context.Context, base config.Config) (config.Con
 // master key (e.g. a backup restored onto a server with a different key).
 func (s *Service) DecryptFailures(ctx context.Context) int {
 	n := 0
-	for _, key := range []string{secUniFiUser, secUniFiPass, secUniFiKey, secSNMP, secFingerbank, secAlertURL} {
+	for _, key := range []string{secUniFiUser, secUniFiPass, secUniFiKey, secProxmox, secSNMP, secFingerbank, secAlertURL} {
 		if v, ok, _ := s.store.SettingGet(ctx, key); ok && v != "" {
 			if _, err := s.cipher.Open(v); err != nil {
 				n++
@@ -192,7 +199,8 @@ func (s *Service) SaveEditable(ctx context.Context, e Editable) error {
 func (s *Service) SaveSecrets(ctx context.Context, in SecretsInput) error {
 	for key, val := range map[string]*string{
 		secUniFiUser: in.UniFiUsername, secUniFiPass: in.UniFiPassword, secUniFiKey: in.UniFiAPIKey,
-		secSNMP: in.SNMPCommunity, secFingerbank: in.FingerbankKey, secAlertURL: in.AlertURL,
+		secProxmox: in.ProxmoxToken,
+		secSNMP:    in.SNMPCommunity, secFingerbank: in.FingerbankKey, secAlertURL: in.AlertURL,
 	} {
 		if val == nil {
 			continue
@@ -212,6 +220,7 @@ func (s *Service) secretFlags(ctx context.Context) SecretFlags {
 	isSet := func(k string) bool { v, ok, _ := s.store.SettingGet(ctx, k); return ok && v != "" }
 	return SecretFlags{
 		UniFiUsername: isSet(secUniFiUser), UniFiPassword: isSet(secUniFiPass), UniFiAPIKey: isSet(secUniFiKey),
+		ProxmoxToken:  isSet(secProxmox),
 		SNMPCommunity: isSet(secSNMP), FingerbankKey: isSet(secFingerbank), AlertURL: isSet(secAlertURL),
 	}
 }
@@ -224,6 +233,9 @@ func applyEditable(c *config.Config, e Editable) {
 	c.UniFi.PathPrefix = e.UniFiPathPrefix
 	c.UniFi.Site = e.UniFiSite
 	c.UniFi.VerifyTLS = e.UniFiVerifyTLS
+	c.Proxmox.Enabled = e.ProxmoxEnabled
+	c.Proxmox.BaseURL = e.ProxmoxBaseURL
+	c.Proxmox.VerifyTLS = e.ProxmoxVerifyTLS
 	c.Fingerbank.Enabled = e.FingerbankEnabled
 	if e.FingerbankMode != "" {
 		c.Fingerbank.Mode = e.FingerbankMode
@@ -270,6 +282,9 @@ func extractEditable(c config.Config) Editable {
 		UniFiPathPrefix:      c.UniFi.PathPrefix,
 		UniFiSite:            c.UniFi.Site,
 		UniFiVerifyTLS:       c.UniFi.VerifyTLS,
+		ProxmoxEnabled:       c.Proxmox.Enabled,
+		ProxmoxBaseURL:       c.Proxmox.BaseURL,
+		ProxmoxVerifyTLS:     c.Proxmox.VerifyTLS,
 		FingerbankEnabled:    c.Fingerbank.Enabled,
 		FingerbankMode:       c.Fingerbank.Mode,
 		ActiveProbeEnabled:   c.ActiveProbe.Enabled,

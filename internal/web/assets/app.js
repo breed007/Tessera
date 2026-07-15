@@ -1212,9 +1212,9 @@ async function openHost(id) {
 // ── settings ─────────────────────────────────────────────────────────────────
 
 async function openSettings() {
-  const [s, users, allIcons, statuses, auditResp] = await Promise.all([
+  const [s, users, allIcons, statuses, auditResp, tokens] = await Promise.all([
     getJSON("/api/settings"), getJSON("/api/users"), loadIcons(true), getJSON("/api/status").catch(() => []),
-    getJSON("/api/audit").catch(() => ({ entries: [] })),
+    getJSON("/api/audit").catch(() => ({ entries: [] })), getJSON("/api/tokens").catch(() => []),
   ]);
   const audit = auditResp.entries || [];
   const customIcons = allIcons.filter((i) => i.source === "custom");
@@ -1353,6 +1353,17 @@ async function openSettings() {
       <p class="muted-note">Restoring replaces ALL current data and restarts the server. The replaced database is kept as <code>&lt;db&gt;.prev</code> for one generation.</p>
     </div>
 
+    <div class="settings-section"><h3>API tokens</h3>
+      <p class="muted-note">Named tokens for API consumers (dashboards, CableMap, the runbook generator, scripts). Send as <code>Authorization: Bearer &lt;token&gt;</code> or <code>X-API-Token</code>. Viewer = read-only (recommended). The contract is at <a href="/api/openapi.json" target="_blank">/api/openapi.json</a>.</p>
+      <div id="token-new"></div>
+      <div id="token-list">${(tokens || []).map(tokenRow).join("") || `<p class="muted-note">No tokens yet.</p>`}</div>
+      <div class="field row" style="margin-top:10px">
+        <input type="text" id="tok-name" placeholder="token name (e.g. cablemap)" style="flex:1">
+        <select id="tok-role"><option value="viewer">viewer (read-only)</option><option value="admin">admin</option></select>
+        <button class="btn" id="btn-add-token">Create token</button>
+      </div>
+    </div>
+
     <div class="settings-section"><h3>Audit log</h3>
       ${audit.length ? `<table class="obs"><thead><tr><th>Time</th><th>User</th><th>Action</th><th>Detail</th></tr></thead>
         <tbody>${audit.map((a) => `<tr><td>${fmtTime(a.at)}</td><td>${esc(a.username)}</td><td class="mono">${esc(a.action)}</td><td>${esc(a.detail || "")}</td></tr>`).join("")}</tbody></table>`
@@ -1400,6 +1411,23 @@ function userRow(u) {
     <button class="btn danger" data-act="del">Delete</button></div>`;
 }
 
+function tokenRow(t) {
+  const used = t.last_used_at && !String(t.last_used_at).startsWith("0001") ? "last used " + fmtTime(t.last_used_at) : "never used";
+  return `<div class="token-row" data-id="${t.id}">
+    <span class="grow"><b>${esc(t.name)}</b> <span class="role">${esc(t.role)}</span> <span class="muted-note">· ${esc(used)}</span></span>
+    <button class="btn danger tok-revoke" data-id="${t.id}">Revoke</button></div>`;
+}
+
+function wireTokenRows() {
+  for (const b of document.querySelectorAll(".tok-revoke")) {
+    b.onclick = async () => {
+      if (!confirm("Revoke this token? Anything using it stops working immediately.")) return;
+      try { await api("DELETE", "/api/tokens/" + b.dataset.id); b.closest(".token-row").remove(); toast("Revoked"); }
+      catch (e) { toast(e.message); }
+    };
+  }
+}
+
 function val(id) { return $(id).value.trim(); }
 function checked(id) { return $(id).checked; }
 function secInput(id) { const v = $(id).value; return v ? v : undefined; }
@@ -1443,6 +1471,24 @@ function wireSettings(canSec) {
       try { await api("PUT", "/api/users/" + id, { username: name, role, password: pw }); toast("Password reset"); } catch (e) { toast(e.message); }
     };
   }
+
+  if ($("btn-add-token")) $("btn-add-token").onclick = async () => {
+    const name = val("tok-name");
+    if (!name) { toast("Name the token first"); return; }
+    try {
+      const r = await post("/api/tokens", { name, role: $("tok-role").value });
+      $("token-new").innerHTML = `<div class="restart-banner warn"><span>New token <b>${esc(r.name)}</b> — copy it now, it won't be shown again:</span>
+        <code class="tok-secret">${esc(r.token)}</code><button class="btn" id="tok-copy">Copy</button></div>`;
+      $("tok-copy").onclick = () => { navigator.clipboard?.writeText(r.token); toast("Copied"); };
+      const list = $("token-list");
+      // re-fetch the list without wiping the just-shown secret
+      const toks = await getJSON("/api/tokens").catch(() => []);
+      list.innerHTML = (toks || []).map(tokenRow).join("") || `<p class="muted-note">No tokens yet.</p>`;
+      wireTokenRows();
+      $("tok-name").value = "";
+    } catch (e) { toast(e.message); }
+  };
+  wireTokenRows();
 
   $("btn-add-icon").onclick = async () => {
     try { await post("/api/icons", { id: val("ic-id"), svg: $("ic-svg").value }); toast("Icon added"); openSettings(); }

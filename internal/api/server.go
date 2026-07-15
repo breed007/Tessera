@@ -198,6 +198,10 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/test/alert", s.handleTestAlert)
 	mux.HandleFunc("POST /api/restart", s.handleRestart)
 	mux.HandleFunc("GET /api/audit", s.handleAudit)
+	mux.HandleFunc("GET /api/openapi.json", s.handleOpenAPI)
+	mux.HandleFunc("GET /api/tokens", s.handleListTokens)
+	mux.HandleFunc("POST /api/tokens", s.handleCreateToken)
+	mux.HandleFunc("DELETE /api/tokens/{id}", s.handleDeleteToken)
 	mux.HandleFunc("GET /api/backup", s.handleBackup)
 	mux.HandleFunc("POST /api/restore", s.handleRestore)
 

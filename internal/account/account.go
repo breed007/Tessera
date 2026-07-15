@@ -7,9 +7,11 @@ package account
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -53,6 +55,25 @@ type Store interface {
 
 	Audit(ctx context.Context, username, action, detail string) error
 	ListAudit(ctx context.Context, limit int) ([]AuditEntry, error)
+
+	CreateAPIToken(ctx context.Context, t APIToken) (int64, error)
+	ListAPITokens(ctx context.Context) ([]APIToken, error)
+	DeleteAPIToken(ctx context.Context, id int64) error
+	LookupAPIToken(ctx context.Context, hash string) (APIToken, bool, error)
+	TouchAPIToken(ctx context.Context, id int64, at time.Time) error
+}
+
+// APIToken is a named, revocable credential for API consumers (CableMap, the
+// runbook generator, scripts). Only the SHA-256 hash is stored; the plaintext is
+// shown once at creation.
+type APIToken struct {
+	ID         int64     `json:"id"`
+	Name       string    `json:"name"`
+	Role       Role      `json:"role"`
+	Hash       string    `json:"-"`
+	CreatedAt  time.Time `json:"created_at"`
+	CreatedBy  string    `json:"created_by,omitempty"`
+	LastUsedAt time.Time `json:"last_used_at"`
 }
 
 // AuditEntry is one recorded action in the audit trail.
@@ -260,6 +281,62 @@ func (m *Manager) ChangePassword(ctx context.Context, username, current, next st
 // Audit records an action in the audit trail.
 func (m *Manager) Audit(ctx context.Context, username, action, detail string) error {
 	return m.store.Audit(ctx, username, action, detail)
+}
+
+// CreateAPIToken generates a new token, stores its hash, and returns the
+// plaintext ONCE (never recoverable afterward). Format: "tsk_" + 32 random bytes.
+func (m *Manager) CreateAPIToken(ctx context.Context, name string, role Role, createdBy string) (plaintext string, t APIToken, err error) {
+	if !ValidRole(role) {
+		return "", APIToken{}, fmt.Errorf("invalid role")
+	}
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", APIToken{}, err
+	}
+	plaintext = "tsk_" + hex.EncodeToString(buf)
+	t = APIToken{Name: name, Role: role, Hash: hashToken(plaintext), CreatedAt: m.now().UTC(), CreatedBy: createdBy}
+	id, err := m.store.CreateAPIToken(ctx, t)
+	if err != nil {
+		return "", APIToken{}, err
+	}
+	t.ID = id
+	_ = m.store.Audit(ctx, createdBy, "token.create", name+" ("+string(role)+")")
+	return plaintext, t, nil
+}
+
+// ListAPITokens returns the tokens (metadata only, no hashes/plaintext).
+func (m *Manager) ListAPITokens(ctx context.Context) ([]APIToken, error) {
+	return m.store.ListAPITokens(ctx)
+}
+
+// DeleteAPIToken revokes a token.
+func (m *Manager) DeleteAPIToken(ctx context.Context, actor string, id int64) error {
+	if err := m.store.DeleteAPIToken(ctx, id); err != nil {
+		return err
+	}
+	_ = m.store.Audit(ctx, actor, "token.delete", fmt.Sprintf("id=%d", id))
+	return nil
+}
+
+// VerifyAPIToken resolves a presented token to its name + role, or ok=false. It
+// updates last-used at most once a minute to avoid a write per request.
+func (m *Manager) VerifyAPIToken(ctx context.Context, presented string) (name string, role Role, ok bool) {
+	if !strings.HasPrefix(presented, "tsk_") {
+		return "", "", false
+	}
+	t, found, err := m.store.LookupAPIToken(ctx, hashToken(presented))
+	if err != nil || !found {
+		return "", "", false
+	}
+	if m.now().Sub(t.LastUsedAt) > time.Minute {
+		_ = m.store.TouchAPIToken(ctx, t.ID, m.now().UTC())
+	}
+	return t.Name, t.Role, true
+}
+
+func hashToken(t string) string {
+	sum := sha256.Sum256([]byte(t))
+	return hex.EncodeToString(sum[:])
 }
 
 // ListAudit returns the most recent audit entries (newest first).

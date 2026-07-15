@@ -37,15 +37,26 @@ func (s *Server) principal(r *http.Request) (principal, bool) {
 			return principal{user, role}, true
 		}
 	}
-	if s.token != "" {
-		if rest, found := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); found && ctEqual(rest, s.token) {
-			return principal{"api-token", account.RoleAdmin}, true
-		}
-		if ctEqual(r.Header.Get("X-API-Token"), s.token) {
-			return principal{"api-token", account.RoleAdmin}, true
+	presented := bearerToken(r)
+	if s.token != "" && presented != "" && ctEqual(presented, s.token) {
+		return principal{"api-token", account.RoleAdmin}, true
+	}
+	// Named, revocable API tokens (for consumers like CableMap / the runbook gen).
+	if presented != "" {
+		if name, role, ok := s.accounts.VerifyAPIToken(r.Context(), presented); ok {
+			return principal{"token:" + name, role}, true
 		}
 	}
 	return principal{}, false
+}
+
+// bearerToken pulls the API token from either the Authorization: Bearer header
+// or the X-API-Token header.
+func bearerToken(r *http.Request) string {
+	if rest, found := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); found {
+		return rest
+	}
+	return r.Header.Get("X-API-Token")
 }
 
 // publicPath reports whether a path is reachable without authentication: static
@@ -55,7 +66,7 @@ func (s *Server) publicPath(path string) bool {
 		return true // static UI assets (hold no data)
 	}
 	switch path {
-	case "/api/login", "/api/setup/status", "/api/version":
+	case "/api/login", "/api/setup/status", "/api/version", "/api/openapi.json":
 		return true
 	case "/api/setup":
 		return s.firstRun.Load()

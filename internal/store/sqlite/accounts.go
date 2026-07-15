@@ -142,6 +142,63 @@ func (s *Store) Audit(ctx context.Context, username, action, detail string) erro
 	return err
 }
 
+func (s *Store) CreateAPIToken(ctx context.Context, t account.APIToken) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `INSERT INTO api_tokens (name, token_hash, role, created_at, created_by, last_used_at)
+		VALUES (?, ?, ?, ?, ?, ?)`, t.Name, t.Hash, string(t.Role), ft(t.CreatedAt), t.CreatedBy, "")
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func (s *Store) ListAPITokens(ctx context.Context) ([]account.APIToken, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, role, created_at, created_by, last_used_at FROM api_tokens ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []account.APIToken
+	for rows.Next() {
+		var t account.APIToken
+		var role, at, lu string
+		if err := rows.Scan(&t.ID, &t.Name, &role, &at, &t.CreatedBy, &lu); err != nil {
+			return nil, err
+		}
+		t.Role = account.Role(role)
+		t.CreatedAt, _ = parseTime(at)
+		t.LastUsedAt, _ = parseTime(lu)
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) DeleteAPIToken(ctx context.Context, id int64) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM api_tokens WHERE id=?`, id)
+	return err
+}
+
+func (s *Store) LookupAPIToken(ctx context.Context, hash string) (account.APIToken, bool, error) {
+	var t account.APIToken
+	var role, at, lu string
+	err := s.db.QueryRowContext(ctx, `SELECT id, name, role, created_at, created_by, last_used_at FROM api_tokens WHERE token_hash=?`, hash).
+		Scan(&t.ID, &t.Name, &role, &at, &t.CreatedBy, &lu)
+	if err == sql.ErrNoRows {
+		return account.APIToken{}, false, nil
+	}
+	if err != nil {
+		return account.APIToken{}, false, err
+	}
+	t.Role = account.Role(role)
+	t.CreatedAt, _ = parseTime(at)
+	t.LastUsedAt, _ = parseTime(lu)
+	return t, true, nil
+}
+
+func (s *Store) TouchAPIToken(ctx context.Context, id int64, at time.Time) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE api_tokens SET last_used_at=? WHERE id=?`, ft(at), id)
+	return err
+}
+
 func (s *Store) ListAudit(ctx context.Context, limit int) ([]account.AuditEntry, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 200

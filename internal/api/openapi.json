@@ -1,0 +1,111 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Tessera API",
+    "description": "Read API for Tessera, a discovery-first IPAM. Intended for consumers (dashboards, CableMap, runbook generators, scripts). Authenticate with a named API token (Settings → API tokens) sent as `Authorization: Bearer <token>` or `X-API-Token: <token>`. A viewer-role token is read-only and sufficient for everything here.",
+    "version": "0.9.0"
+  },
+  "servers": [{ "url": "/", "description": "This Tessera instance" }],
+  "security": [{ "bearerAuth": [] }, { "apiTokenHeader": [] }],
+  "tags": [
+    { "name": "inventory", "description": "Hosts, addresses, subnets, services" },
+    { "name": "topology", "description": "Physical/logical network map" },
+    { "name": "posture", "description": "Security findings and conflicts" },
+    { "name": "metrics", "description": "Counts, trends, Prometheus" }
+  ],
+  "paths": {
+    "/api/summary": {
+      "get": { "tags": ["metrics"], "summary": "Top-line counts (hosts, addresses, subnets, services, conflicts, observations)", "responses": { "200": { "description": "Counts", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Summary" } } } } } }
+    },
+    "/api/hosts": {
+      "get": { "tags": ["inventory"], "summary": "All hosts with bound identities (MACs, IPs), vendor, online state, and effective icon", "responses": { "200": { "description": "Host rows", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/HostRow" } } } } } } }
+    },
+    "/api/host": {
+      "get": {
+        "tags": ["inventory"], "summary": "One host with everything attached (interfaces, addresses, services, topology, provenance, availability, issue counts)",
+        "parameters": [{ "name": "id", "in": "query", "required": true, "schema": { "type": "string" }, "description": "Stable id, e.g. mac:aa:bb:cc:00:00:01 or ip:10.0.0.5" }],
+        "responses": { "200": { "description": "Host detail", "content": { "application/json": { "schema": { "type": "object" } } } }, "404": { "description": "Unknown host" } }
+      }
+    },
+    "/api/subnets": {
+      "get": { "tags": ["inventory"], "summary": "All known subnets", "responses": { "200": { "description": "Subnets", "content": { "application/json": { "schema": { "type": "array", "items": { "type": "object" } } } } } } }
+    },
+    "/api/subnet": {
+      "get": {
+        "tags": ["inventory"], "summary": "One subnet's address map + utilization",
+        "parameters": [{ "name": "id", "in": "query", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "Subnet detail", "content": { "application/json": { "schema": { "type": "object" } } } }, "404": { "description": "Unknown subnet" } }
+      }
+    },
+    "/api/services": {
+      "get": { "tags": ["inventory"], "summary": "All reachable services (proto/port, banner, host)", "responses": { "200": { "description": "Services", "content": { "application/json": { "schema": { "type": "array", "items": { "type": "object" } } } } } } }
+    },
+    "/api/topology": {
+      "get": { "tags": ["topology"], "summary": "Network tree (gateway → switches → APs → clients) + unplaced devices", "responses": { "200": { "description": "Topology", "content": { "application/json": { "schema": { "type": "object" } } } } } }
+    },
+    "/api/portmap": {
+      "get": { "tags": ["topology"], "summary": "Per-switch port map (patch-panel view): every port with its occupant", "responses": { "200": { "description": "Port map", "content": { "application/json": { "schema": { "type": "object" } } } } } }
+    },
+    "/api/security": {
+      "get": { "tags": ["posture"], "summary": "Exposed-service findings (active + suppressed) with severity counts", "responses": { "200": { "description": "Security view", "content": { "application/json": { "schema": { "type": "object" } } } } } }
+    },
+    "/api/conflicts": {
+      "get": { "tags": ["posture"], "summary": "Open conflicts, resolutions, and source-precedence policy", "responses": { "200": { "description": "Conflicts view", "content": { "application/json": { "schema": { "type": "object" } } } } } }
+    },
+    "/api/observations": {
+      "get": {
+        "tags": ["inventory"], "summary": "Filtered, paginated observation log (provenance)",
+        "parameters": [
+          { "name": "q", "in": "query", "schema": { "type": "string" }, "description": "Substring match on subject or value" },
+          { "name": "source", "in": "query", "schema": { "type": "string" } },
+          { "name": "attribute", "in": "query", "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer" } },
+          { "name": "offset", "in": "query", "schema": { "type": "integer" } }
+        ],
+        "responses": { "200": { "description": "Observations page", "content": { "application/json": { "schema": { "type": "object" } } } } }
+      }
+    },
+    "/api/trends": {
+      "get": { "tags": ["metrics"], "summary": "Time series: device growth, online count, subnet utilization", "responses": { "200": { "description": "Trends", "content": { "application/json": { "schema": { "type": "object" } } } } } }
+    },
+    "/api/metrics": {
+      "get": { "tags": ["metrics"], "summary": "Prometheus text exposition of the current state", "responses": { "200": { "description": "Prometheus metrics", "content": { "text/plain": { "schema": { "type": "string" } } } } } }
+    },
+    "/api/exports": {
+      "get": { "tags": ["inventory"], "summary": "List available export formats (JSON/CSV, NetBox, phpIPAM)", "responses": { "200": { "description": "Export list", "content": { "application/json": { "schema": { "type": "object" } } } } } }
+    },
+    "/api/export/{name}": {
+      "get": {
+        "tags": ["inventory"], "summary": "Download an export (inventory.json, hosts.csv, netbox-ips.csv, …)",
+        "parameters": [{ "name": "name", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Export file" }, "404": { "description": "Unknown export" } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": { "type": "http", "scheme": "bearer", "description": "Authorization: Bearer <token>" },
+      "apiTokenHeader": { "type": "apiKey", "in": "header", "name": "X-API-Token" }
+    },
+    "schemas": {
+      "Summary": {
+        "type": "object",
+        "properties": {
+          "hosts": { "type": "integer" }, "addresses": { "type": "integer" }, "subnets": { "type": "integer" },
+          "services": { "type": "integer" }, "open_conflicts": { "type": "integer" }, "new_devices": { "type": "integer" }, "observations": { "type": "integer" }
+        }
+      },
+      "HostRow": {
+        "type": "object",
+        "properties": {
+          "stable_id": { "type": "string" }, "display_name": { "type": "string" }, "device_class": { "type": "string" },
+          "model": { "type": "string" }, "os_guess": { "type": "string" }, "is_expected": { "type": "boolean" },
+          "ignored": { "type": "boolean" }, "tags": { "type": "array", "items": { "type": "string" } },
+          "macs": { "type": "array", "items": { "type": "string" } }, "ips": { "type": "array", "items": { "type": "string" } },
+          "vendor": { "type": "string" }, "online": { "type": "boolean" }, "icon_url": { "type": "string" },
+          "first_seen": { "type": "string", "format": "date-time" }, "last_seen": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  }
+}

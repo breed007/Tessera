@@ -190,8 +190,9 @@ td button.rescan-subnet { padding: 3px 9px; }
 .test-result.ok { color: var(--accent); }
 .test-result.err { color: var(--absent); }
 .restart-banner { background: #3a2a1a; color: var(--absent); border: 1px solid rgba(217,115,77,.4); border-radius: 5px; padding: 10px 12px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.user-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--hairline); font-size: 12px; }
-.user-row .grow { flex: 1; }
+.user-row, .token-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--hairline); font-size: 12px; }
+.user-row .grow, .token-row .grow { flex: 1; }
+.tok-secret { flex: 1; font-family: var(--mono); font-size: 12px; word-break: break-all; color: var(--accent); }
 .muted-note { color: var(--faint); font-size: 11px; margin: 4px 0 0; }
 #footer { text-align: center; color: var(--faint); font-size: 11px; padding: 18px 0 28px; letter-spacing: 0.03em; }
 .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }

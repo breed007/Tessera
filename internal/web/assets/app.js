@@ -980,10 +980,25 @@ async function openConflicts() {
     return `<div class="cf-side"><div><b>${esc(val)}</b> <span class="src">(${esc(src)})</span></div><div class="muted-note">${esc(prov)}</div>${btn}</div>`;
   };
   const precedence = data.precedence || [];
-  const precHTML = precedence.length ? `
+  const precAttrs = [["hostname", "Hostname"], ["model", "Model"], ["device_class", "Device / Hardware"], ["os_guess", "Operating System"]];
+  const precSources = ["dns", "unifi", "active_rdns", "passive_mdns", "dhcp_leases", "proxmox", "active_snmp", "fingerbank", "inferred"];
+  const addForm = admin ? `
+    <div class="cf-card prec-add">
+      <div class="prec-add-row">
+        Always prefer
+        <input list="prec-src-list" id="prec-src" value="dns" placeholder="source" class="prec-src-input">
+        <datalist id="prec-src-list">${precSources.map((s) => `<option value="${esc(s)}">`).join("")}</datalist>
+        for
+        <select id="prec-attr">${precAttrs.map(([v, l]) => `<option value="${v}"${v === "hostname" ? " selected" : ""}>${l}</option>`).join("")}</select>
+        <button class="ghost" id="prec-add-btn">Add rule</button>
+      </div>
+      <div class="muted-note">e.g. prefer <b>dns</b> for <b>hostname</b> so authoritative DNS names win over rDNS/UniFi guesses across every device.</div>
+    </div>` : "";
+  const precHTML = `
     <h3>Source-precedence policy <span class="badge">${precedence.length}</span></h3>
     <p class="muted-note">For these attributes, the chosen source's value always wins (manual annotations still override). Conflicts they cover are auto-resolved.</p>
-    ${precedence.map((p) => `<div class="cf-card"><span class="mono">${esc(p.attribute)}</span> → always prefer <b>${esc(p.source)}</b>${admin ? ` <button class="ghost prec-clear" data-attr="${esc(p.attribute)}">Clear</button>` : ""}</div>`).join("")}` : "";
+    ${precedence.map((p) => `<div class="cf-card"><span class="mono">${esc(p.attribute)}</span> → always prefer <b>${esc(p.source)}</b>${admin ? ` <button class="ghost prec-clear" data-attr="${esc(p.attribute)}">Clear</button>` : ""}</div>`).join("")}
+    ${addForm}`;
 
   const openHTML = open.length ? open.map((c) => `
     <div class="cf-card" data-subject="${esc(c.subject)}" data-attr="${esc(c.attribute)}">
@@ -1044,6 +1059,14 @@ async function openConflicts() {
         catch (e) { toast(e.message); }
       };
     }
+    const addBtn = $("prec-add-btn");
+    if (addBtn) addBtn.onclick = async () => {
+      const attribute = $("prec-attr").value;
+      const source = $("prec-src").value.trim();
+      if (!source) { toast("Enter a source"); return; }
+      try { await post("/api/conflict/precedence", { attribute, source }); toast("Policy set"); openConflicts(); refresh(); }
+      catch (e) { toast(e.message); }
+    };
   }
   openPanel("detail");
 }

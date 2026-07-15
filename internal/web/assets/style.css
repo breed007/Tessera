@@ -109,6 +109,10 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 .cf-side { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; background: var(--bg); border: 1px solid var(--hairline); border-radius: 5px; padding: 7px 9px; }
 .cf-side b { color: var(--accent); }
 .cf-sides .vs { color: var(--faint); text-align: center; font-size: 11px; }
+.cf-card.prec-add { border-style: dashed; }
+.prec-add-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.prec-add-row select, .prec-src-input { background: var(--bg); border: 1px solid var(--hairline); border-radius: 4px; color: var(--text); font-family: var(--mono); font-size: 12px; padding: 5px 7px; }
+.prec-src-input { width: 130px; }
 .cf-note { width: 100%; margin-top: 8px; padding: 6px 8px; background: var(--bg); border: 1px solid var(--hairline); border-radius: 3px; color: var(--text); font-family: var(--mono); font-size: 12px; }
 .cf-note:focus { outline: none; border-color: var(--accent); }
 .cf-note-text { color: var(--text-secondary, var(--text)); margin-top: 4px; }

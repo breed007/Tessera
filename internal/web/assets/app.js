@@ -87,8 +87,10 @@ function renderUserbar() {
   const settings = me.is_admin ? link("settings", "Settings") : "";
   $("userbar").innerHTML =
     `<nav class="nav">${link("dashboard", "Dashboard")}${link("activity", "Activity")}${link("topology", "Topology")}${link("ports", "Ports")}${link("observations", "Observations")}${link("security", "Security")}${settings}</nav>` +
+    `<button id="nav-search" class="nav-search" title="Search devices, subnets, services (⌘K or /)">🔍 <kbd>⌘K</kbd></button>` +
     `<b>${esc(me.username)}</b><span class="role">${esc(me.role)}</span><a id="nav-logout">Logout</a>`;
   for (const a of document.querySelectorAll("#userbar .nav-link")) a.onclick = () => showView(a.dataset.view);
+  $("nav-search").onclick = () => openPalette();
   $("nav-logout").onclick = async () => { await post("/api/logout"); location.reload(); };
 }
 
@@ -104,6 +106,7 @@ async function refresh() {
   }
   renderSummary(summary); renderHosts(hosts); renderDevices(hosts, summary.open_conflicts);
   renderTrends();
+  paletteSubnets = null; // re-fetch subnets/services on next palette open
 }
 
 // ── trend charts (hand-rolled SVG, no deps) ──────────────────────────────────
@@ -1749,10 +1752,96 @@ function showView(name) {
   else if (name === "activity") renderActivity();
 }
 
+// ── global search palette (Cmd/Ctrl-K, or "/") ───────────────────────────────
+let paletteSubnets = null, paletteServices = null, paletteMatches = [], paletteSel = 0;
+
+async function openPalette() {
+  if (typeof me === "undefined" || !me) return;
+  // Show immediately — hosts are searchable at once from the live hostsData cache.
+  $("palette").classList.remove("hidden");
+  const inp = $("palette-input");
+  inp.value = ""; paletteMatches = []; paletteSel = 0;
+  renderPaletteResults("");
+  inp.focus();
+  // Fill in subnets + services in the background, then re-render with the query.
+  if (paletteSubnets === null) {
+    paletteSubnets = await getJSON("/api/subnets").catch(() => []);
+    paletteServices = await getJSON("/api/services").catch(() => []);
+    if (!$("palette").classList.contains("hidden")) renderPaletteResults(inp.value);
+  }
+}
+function closePalette() { $("palette").classList.add("hidden"); }
+
+function paletteSearch(q) {
+  q = q.trim().toLowerCase();
+  const terms = q ? q.split(/\s+/) : [];
+  const hit = (hay) => terms.every((t) => hay.includes(t));
+  const out = [];
+  // Hosts (from the already-loaded inventory).
+  for (const h of hostsData) {
+    const hay = [h.display_name, h.vendor, h.model, h.device_class, h.os_guess,
+      (h.ips || []).join(" "), (h.macs || []).join(" "), (h.tags || []).join(" ")].join(" ").toLowerCase();
+    if (hit(hay)) out.push({ kind: "device", icon: "🖥", title: h.display_name || (h.ips || [])[0] || (h.macs || [])[0] || h.stable_id,
+      sub: [(h.ips || [])[0], h.model || h.device_class].filter(Boolean).join(" · "), act: () => openHost(h.stable_id) });
+  }
+  for (const s of (paletteSubnets || [])) {
+    const hay = [s.cidr, s.name, s.gateway].join(" ").toLowerCase();
+    if (hit(hay)) out.push({ kind: "subnet", icon: "🧮", title: s.cidr, sub: s.name || s.source || "", act: () => { showView("dashboard"); openSubnet(s.id); } });
+  }
+  for (const sv of (paletteServices || [])) {
+    const hay = [sv.service, sv.proto, String(sv.port), sv.host].join(" ").toLowerCase();
+    if (hit(hay) && sv.stable_id) out.push({ kind: "service", icon: "🔌", title: `${sv.proto}/${sv.port}${sv.service ? " " + sv.service : ""}`,
+      sub: [sv.host, sv.banner].filter(Boolean).join(" · "), act: () => openHost(sv.stable_id) });
+  }
+  return out.slice(0, 40);
+}
+
+function renderPaletteResults(q) {
+  paletteMatches = paletteSearch(q);
+  if (paletteSel >= paletteMatches.length) paletteSel = Math.max(0, paletteMatches.length - 1);
+  const box = $("palette-results");
+  if (!paletteMatches.length) {
+    box.innerHTML = q.trim() ? `<div class="pal-empty">No matches.</div>` : `<div class="pal-empty">Search across devices, subnets, and services. ↑↓ to move, Enter to open.</div>`;
+    return;
+  }
+  box.innerHTML = paletteMatches.map((m, i) => `<div class="pal-row ${i === paletteSel ? "sel" : ""}" data-i="${i}">
+    <span class="pal-ico">${m.icon}</span><span class="pal-title">${esc(m.title)}</span>
+    <span class="pal-kind">${m.kind}</span>${m.sub ? `<span class="pal-sub">${esc(m.sub)}</span>` : ""}</div>`).join("");
+  for (const r of box.querySelectorAll(".pal-row")) r.onclick = () => choosePalette(Number(r.dataset.i));
+}
+function choosePalette(i) {
+  const m = paletteMatches[i];
+  if (!m) return;
+  closePalette();
+  m.act();
+}
+function movePaletteSel(d) {
+  if (!paletteMatches.length) return;
+  paletteSel = (paletteSel + d + paletteMatches.length) % paletteMatches.length;
+  const box = $("palette-results");
+  box.querySelectorAll(".pal-row").forEach((r, i) => r.classList.toggle("sel", i === paletteSel));
+  const sel = box.querySelector(".pal-row.sel");
+  if (sel) sel.scrollIntoView({ block: "nearest" });
+}
+
+document.addEventListener("keydown", (e) => {
+  const paletteOpen = !$("palette").classList.contains("hidden");
+  const typing = /^(input|textarea|select)$/i.test((e.target.tagName || "")) || e.target.isContentEditable;
+  if ((e.key === "k" || e.key === "K") && (e.metaKey || e.ctrlKey)) { e.preventDefault(); paletteOpen ? closePalette() : openPalette(); return; }
+  if (e.key === "/" && !typing && !paletteOpen) { e.preventDefault(); openPalette(); return; }
+  if (!paletteOpen) return;
+  if (e.key === "Escape") { e.preventDefault(); closePalette(); }
+  else if (e.key === "ArrowDown") { e.preventDefault(); movePaletteSel(1); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); movePaletteSel(-1); }
+  else if (e.key === "Enter") { e.preventDefault(); choosePalette(paletteSel); }
+});
+
 async function init() {
   try { me = await fetch("/api/me").then((r) => (r.ok ? r.json() : Promise.reject())); }
   catch { showLogin(); return; }
   hideLogin(); renderUserbar(); setupSortHeaders(); setupObservations(); renderFooter();
+  $("palette-input").oninput = (e) => { paletteSel = 0; renderPaletteResults(e.target.value); };
+  $("palette").onclick = (e) => { if (e.target.id === "palette") closePalette(); };
   await refresh().catch((e) => $("summary").textContent = "error: " + e.message);
   // Restore the view from the URL hash (deep-link / back-button), default dashboard.
   showView((location.hash || "").replace("#", "") || "dashboard");

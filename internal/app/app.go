@@ -21,9 +21,9 @@ import (
 	"github.com/tessera/tessera/internal/collector/active"
 	"github.com/tessera/tessera/internal/collector/dhcp"
 	"github.com/tessera/tessera/internal/collector/dns"
-	"github.com/tessera/tessera/internal/collector/proxmox"
 	"github.com/tessera/tessera/internal/collector/fingerbank"
 	"github.com/tessera/tessera/internal/collector/passive"
+	"github.com/tessera/tessera/internal/collector/proxmox"
 	"github.com/tessera/tessera/internal/collector/unifi"
 	"github.com/tessera/tessera/internal/config"
 	"github.com/tessera/tessera/internal/entity"
@@ -318,6 +318,8 @@ func activeProbeConfig(cfg config.Config) active.Config {
 		ReverseDNS:      disc.ActiveReverseDNS,
 		ARPTable:        disc.ActiveARPTable,
 		SNMP:            disc.ActiveSNMP,
+		MDNS:            disc.ActiveMDNS,
+		Media:           disc.ActiveMedia,
 		TCPBehavioral:   disc.TCPBehavioral,
 		ThoroughWake:    disc.ThoroughWake,
 		SNMPCommunities: communities,

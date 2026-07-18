@@ -429,6 +429,7 @@ active_probe:
   interface: {{.MgmtIface}}
   icmp: true
   tcp_ports: [22, 80, 443, 445, 3389, 161]
+  udp_ports: [5353, 1900]   # mDNS (Bonjour) + SSDP — liveness for TVs/speakers/IoT
   rate:
     max_probes_per_sec: 20
     cycle_interval: 15m

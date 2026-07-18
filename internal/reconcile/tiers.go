@@ -36,7 +36,8 @@ func tierFor(obs observation.Observation) Tier {
 	case observation.SourceActiveICMP, observation.SourceActiveTCP, observation.SourcePassiveDHCP:
 		return TierStrong
 	case observation.SourceFingerbank,
-		observation.SourcePassiveMDNS, observation.SourcePassiveSSDP, observation.SourcePassiveNBNS:
+		observation.SourcePassiveMDNS, observation.SourcePassiveSSDP, observation.SourcePassiveNBNS,
+		observation.SourceActiveMDNS, observation.SourceActiveMedia:
 		return TierInferential
 	default:
 		return TierInferential

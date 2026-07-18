@@ -1379,6 +1379,8 @@ async function openSettings() {
         ${chk("disc-a-rdns", "Reverse DNS <span class='th'>PTR names</span>", e.disc_active_reverse_dns)}
         ${chk("disc-a-arp", "ARP-table harvest <span class='th'>MAC↔IP</span>", e.disc_active_arp_table)}
         ${chk("disc-a-snmp", "SNMP <span class='th'>sysName/sysDescr</span>", e.disc_active_snmp)}
+        ${chk("disc-a-mdns", "mDNS query <span class='th'>Fire TV · Apple TV · Cast · Ring — service types + model</span>", e.disc_active_mdns)}
+        ${chk("disc-a-media", "Media probes <span class='th'>AirPlay :49152 · Cast :8008 — exact model</span>", e.disc_active_media)}
         ${chk("disc-a-tcpbeh", "TCP behavioral scan <span class='th'>OS / firewall fingerprint</span>", e.disc_tcp_behavioral)}
         ${chk("disc-a-wake", "Thorough Wake <span class='th'>extra pass for sleepy devices · slower</span>", e.disc_thorough_wake)}
       </div>
@@ -1578,6 +1580,7 @@ function wireSettings(canSec) {
       disc_active_udp: checked("disc-a-udp"),
       disc_active_banners: checked("disc-a-ban"), disc_active_reverse_dns: checked("disc-a-rdns"),
       disc_active_arp_table: checked("disc-a-arp"), disc_active_snmp: checked("disc-a-snmp"),
+      disc_active_mdns: checked("disc-a-mdns"), disc_active_media: checked("disc-a-media"),
       disc_tcp_behavioral: checked("disc-a-tcpbeh"), disc_thorough_wake: checked("disc-a-wake"),
       alerts_enabled: checked("set-al-en"), alerts_kind: $("set-al-kind").value,
       alert_new_device: checked("set-al-new"), alert_offline: checked("set-al-off"),

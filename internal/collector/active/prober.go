@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/netip"
 	"strconv"
 	"sync"
 	"time"
 
+	"github.com/tessera/tessera/internal/collector/passive"
 	"github.com/tessera/tessera/internal/observation"
 )
 
@@ -30,8 +32,10 @@ type Config struct {
 	ARPTable        bool
 	SNMP            bool     // gate SNMP independently of the community being set
 	SNMPCommunities []string // tried in order; empty → SNMP disabled
-	TCPBehavioral   bool   // closed-port timing fingerprint
-	ThoroughWake    bool   // extra wake pass for power-saving devices
+	MDNS            bool     // unicast mDNS query for service types / model=
+	Media           bool     // AirPlay/Cast HTTP identity probes
+	TCPBehavioral   bool     // closed-port timing fingerprint
+	ThoroughWake    bool     // extra wake pass for power-saving devices
 	MaxProbesPerSec int
 	CycleInterval   time.Duration
 	Interface       string // egress interface override; empty → default-route interface
@@ -49,28 +53,31 @@ func (c Config) WithTechniques() Config { c.techniquesSet = true; return c }
 // Prober implements collector.Collector: it sweeps the configured scope on a
 // cycle, gently and rate-limited, emitting liveness/binding/service observations.
 type Prober struct {
-	subnets       []string
-	ports         []int
-	udpPorts      []int
-	icmpEnabled   bool
-	tcpEnabled    bool
-	udpEnabled    bool
-	bannersOn     bool
-	rdnsOn        bool
-	arpTableOn    bool
+	subnets         []string
+	ports           []int
+	udpPorts        []int
+	icmpEnabled     bool
+	tcpEnabled      bool
+	udpEnabled      bool
+	bannersOn       bool
+	rdnsOn          bool
+	arpTableOn      bool
 	snmpOn          bool
+	mdnsOn          bool
+	mediaOn         bool
 	tcpBehavior     bool
 	thoroughWake    bool
 	snmpCommunities []string
-	limiter       *limiter
-	cycleInterval time.Duration
-	concurrency   int
-	log           *slog.Logger
+	mediaClient     *http.Client
+	limiter         *limiter
+	cycleInterval   time.Duration
+	concurrency     int
+	log             *slog.Logger
 
 	interfaceName string     // egress interface override; empty → default-route
 	sourceIP      netip.Addr // resolved at Run; zero = OS default routing
 
-	connectTimeout, bannerTimeout, icmpTimeout, snmpTimeout, udpTimeout time.Duration
+	connectTimeout, bannerTimeout, icmpTimeout, snmpTimeout, udpTimeout, mdnsTimeout time.Duration
 
 	pinger *icmpPinger
 }
@@ -90,29 +97,33 @@ func NewProber(cfg Config, log *slog.Logger) *Prober {
 		cfg.TCP, cfg.UDP, cfg.Banners, cfg.ReverseDNS, cfg.ARPTable, cfg.SNMP = true, true, true, true, true, true
 	}
 	return &Prober{
-		subnets:        cfg.Subnets,
-		ports:          cfg.TCPPorts,
-		udpPorts:       cfg.UDPPorts,
-		icmpEnabled:    cfg.ICMP,
-		tcpEnabled:     cfg.TCP,
-		udpEnabled:     cfg.UDP,
-		bannersOn:      cfg.Banners,
-		rdnsOn:         cfg.ReverseDNS,
-		arpTableOn:     cfg.ARPTable,
-		snmpOn:         cfg.SNMP,
+		subnets:         cfg.Subnets,
+		ports:           cfg.TCPPorts,
+		udpPorts:        cfg.UDPPorts,
+		icmpEnabled:     cfg.ICMP,
+		tcpEnabled:      cfg.TCP,
+		udpEnabled:      cfg.UDP,
+		bannersOn:       cfg.Banners,
+		rdnsOn:          cfg.ReverseDNS,
+		arpTableOn:      cfg.ARPTable,
+		snmpOn:          cfg.SNMP,
+		mdnsOn:          cfg.MDNS,
+		mediaOn:         cfg.Media,
 		tcpBehavior:     cfg.TCPBehavioral,
 		thoroughWake:    cfg.ThoroughWake,
 		snmpCommunities: cfg.SNMPCommunities,
-		limiter:        newLimiter(cfg.MaxProbesPerSec),
-		cycleInterval:  cycle,
-		concurrency:    32,
-		interfaceName:  cfg.Interface,
-		log:            log,
-		connectTimeout: 2 * time.Second,
-		bannerTimeout:  1500 * time.Millisecond,
-		icmpTimeout:    time.Second,
-		snmpTimeout:    1500 * time.Millisecond,
-		udpTimeout:     2 * time.Second,
+		mediaClient:     &http.Client{Timeout: 3 * time.Second},
+		limiter:         newLimiter(cfg.MaxProbesPerSec),
+		cycleInterval:   cycle,
+		concurrency:     32,
+		interfaceName:   cfg.Interface,
+		log:             log,
+		connectTimeout:  2 * time.Second,
+		bannerTimeout:   1500 * time.Millisecond,
+		icmpTimeout:     time.Second,
+		snmpTimeout:     1500 * time.Millisecond,
+		udpTimeout:      2 * time.Second,
+		mdnsTimeout:     1500 * time.Millisecond,
 	}
 }
 
@@ -363,6 +374,85 @@ func (p *Prober) probeHost(ctx context.Context, ip netip.Addr, sink *observation
 			if descr, _ := snmpGet(ctx, ipStr, community, oidSysDescr, p.snmpTimeout, p.sourceIP); descr != "" {
 				p.record(ctx, sink, emit{observation.SourceActiveSNMP, observation.SubjectIPv4, ipStr, observation.AttrOSGuess, descr, confSNMPDescr})
 			}
+		}
+	}
+
+	// Active mDNS: a unicast Bonjour query surfaces the device's own service
+	// advertisements (Fire TV, Apple TV, Chromecast, Ring, Echo, printers, …) and
+	// self-reported model= — SPAN-free, the highest-signal identity for consumer
+	// gear. Routed through the same classifiers the passive sensor uses.
+	if p.mdnsOn && p.limiter.wait(ctx) == nil {
+		p.recordMDNS(ctx, sink, ipStr)
+	}
+
+	// Media identity probes: AirPlay (:49152) and Google Cast (:8008) expose an
+	// exact model + name over unauthenticated HTTP — the strongest tell for TVs,
+	// streamers, HomePods, and Nest/Home devices.
+	if p.mediaOn {
+		p.recordMedia(ctx, sink, ipStr)
+	}
+}
+
+// recordMDNS runs one active mDNS query and emits device_class/os/model/hostname.
+func (p *Prober) recordMDNS(ctx context.Context, sink *observation.Sink, ipStr string) {
+	f := queryMDNS(ctx, ipStr, p.mdnsTimeout, p.sourceIP)
+	if f == nil {
+		return
+	}
+	src := observation.SourceActiveMDNS
+	// Service types → device class / OS (e.g. _airplay → media / TV device).
+	for _, svc := range f.services {
+		if dev, os := passive.ClassifyMDNSService(svc); dev != "" || os != "" {
+			if dev != "" {
+				p.record(ctx, sink, emit{src, observation.SubjectIPv4, ipStr, observation.AttrDeviceClass, dev, confMDNSClass})
+			}
+			if os != "" {
+				p.record(ctx, sink, emit{src, observation.SubjectIPv4, ipStr, observation.AttrOSGuess, os, confMDNSOS})
+			}
+		}
+	}
+	// TXT model= → OS + either an exact hardware model or a coarse device family.
+	// An exact match is a real model (AttrModel, high conf); a prefix-only match
+	// is a device class, mirroring the passive sensor's split.
+	if f.model != "" {
+		if dev, os, precise := passive.ClassifyMDNSModel(f.model); dev != "" || os != "" {
+			if precise {
+				p.record(ctx, sink, emit{src, observation.SubjectIPv4, ipStr, observation.AttrModel, dev, confMDNSModel})
+			} else if dev != "" {
+				p.record(ctx, sink, emit{src, observation.SubjectIPv4, ipStr, observation.AttrDeviceClass, dev, confMDNSModelGeneric})
+			}
+			if os != "" {
+				p.record(ctx, sink, emit{src, observation.SubjectIPv4, ipStr, observation.AttrOSGuess, os, confMDNSOS})
+			}
+		}
+	}
+	if f.name != "" {
+		p.record(ctx, sink, emit{src, observation.SubjectIPv4, ipStr, observation.AttrHostname, f.name, confMDNSHost})
+	}
+}
+
+// recordMedia runs the AirPlay + Cast HTTP identity probes and emits their findings.
+func (p *Prober) recordMedia(ctx context.Context, sink *observation.Sink, ipStr string) {
+	for _, probe := range []func(context.Context, string, *http.Client) mediaFindings{probeAirPlay, probeGoogleCast} {
+		if p.limiter.wait(ctx) != nil {
+			return
+		}
+		f := probe(ctx, ipStr, p.mediaClient)
+		if f.empty() {
+			continue
+		}
+		src := observation.SourceActiveMedia
+		if f.deviceClass != "" {
+			p.record(ctx, sink, emit{src, observation.SubjectIPv4, ipStr, observation.AttrDeviceClass, f.deviceClass, confMediaClass})
+		}
+		if f.model != "" {
+			p.record(ctx, sink, emit{src, observation.SubjectIPv4, ipStr, observation.AttrModel, f.model, confMediaModel})
+		}
+		if f.os != "" {
+			p.record(ctx, sink, emit{src, observation.SubjectIPv4, ipStr, observation.AttrOSGuess, f.os, confMediaOS})
+		}
+		if f.name != "" {
+			p.record(ctx, sink, emit{src, observation.SubjectIPv4, ipStr, observation.AttrHostname, f.name, confMediaName})
 		}
 	}
 }

@@ -8,6 +8,7 @@ require (
 	golang.org/x/net v0.56.0
 	golang.org/x/term v0.44.0
 	gopkg.in/yaml.v3 v3.0.1
+	howett.net/plist v1.0.1
 	modernc.org/sqlite v1.52.0
 )
 

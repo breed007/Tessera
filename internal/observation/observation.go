@@ -27,6 +27,8 @@ const (
 	SourceActiveTCPBeh Source = "active_tcp_behavior" // TCP behavioural fingerprint
 	SourceActiveRDNS   Source = "active_rdns"
 	SourceActiveSNMP   Source = "active_snmp"
+	SourceActiveMDNS   Source = "active_mdns"  // unicast mDNS query (service types, model=)
+	SourceActiveMedia  Source = "active_media" // AirPlay/Cast HTTP identity probe
 	SourceInferred     Source = "inferred" // reconciler's generic-inference layer
 	SourceUniFi        Source = "unifi"
 	SourceProxmox      Source = "proxmox" // Proxmox VE VM/CT inventory
@@ -41,7 +43,7 @@ var validSources = map[Source]bool{
 	SourcePassiveMDNS: true, SourcePassiveSSDP: true, SourcePassiveNBNS: true,
 	SourcePassiveTLS: true, SourceActiveICMP: true, SourceActiveARP: true,
 	SourceActiveTCP: true, SourceActiveUDP: true, SourceActiveTCPBeh: true, SourceActiveRDNS: true,
-	SourceActiveSNMP: true, SourceInferred: true,
+	SourceActiveSNMP: true, SourceActiveMDNS: true, SourceActiveMedia: true, SourceInferred: true,
 	SourceUniFi: true, SourceProxmox: true, SourceFingerbank: true, SourceDHCPLeases: true, SourceDNS: true, SourceManual: true,
 }
 

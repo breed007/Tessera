@@ -109,6 +109,8 @@ type Discovery struct {
 	ActiveReverseDNS *bool `yaml:"active_reverse_dns"` // PTR lookups for live hosts
 	ActiveARPTable   *bool `yaml:"active_arp_table"`   // harvest the kernel ARP cache
 	ActiveSNMP       *bool `yaml:"active_snmp"`        // SNMP sysName/sysDescr (needs a community)
+	ActiveMDNS       *bool `yaml:"active_mdns"`        // unicast mDNS query → service types, model= (Fire TV, Apple TV, Cast, …)
+	ActiveMedia      *bool `yaml:"active_media"`       // AirPlay/Cast HTTP identity probes (exact model + name)
 	TCPBehavioral    *bool `yaml:"tcp_behavioral"`     // closed-port timing → OS/firewall behaviour (weak, corroborating)
 	ThoroughWake     *bool `yaml:"thorough_wake"`      // extra wake pass for power-saving devices (slower)
 }
@@ -117,7 +119,7 @@ type Discovery struct {
 type EffectiveDiscovery struct {
 	PassiveARP, PassiveDHCP, PassiveMDNS, PassiveSSDP, PassiveNetBIOS                 bool
 	ActiveICMP, ActiveTCP, ActiveUDP, ActiveBanners, ActiveReverseDNS, ActiveARPTable bool
-	ActiveSNMP, TCPBehavioral, ThoroughWake                                           bool
+	ActiveSNMP, ActiveMDNS, ActiveMedia, TCPBehavioral, ThoroughWake                  bool
 }
 
 // Resolve turns the pointer-valued toggles into concrete booleans, defaulting
@@ -130,7 +132,8 @@ func (d Discovery) Resolve() EffectiveDiscovery {
 		ActiveICMP: on(d.ActiveICMP), ActiveTCP: on(d.ActiveTCP), ActiveUDP: on(d.ActiveUDP),
 		ActiveBanners:    on(d.ActiveBanners),
 		ActiveReverseDNS: on(d.ActiveReverseDNS), ActiveARPTable: on(d.ActiveARPTable),
-		ActiveSNMP: on(d.ActiveSNMP), TCPBehavioral: on(d.TCPBehavioral), ThoroughWake: on(d.ThoroughWake),
+		ActiveSNMP: on(d.ActiveSNMP), ActiveMDNS: on(d.ActiveMDNS), ActiveMedia: on(d.ActiveMedia),
+		TCPBehavioral: on(d.TCPBehavioral), ThoroughWake: on(d.ThoroughWake),
 	}
 }
 

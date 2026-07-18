@@ -49,7 +49,7 @@ active_probe:
   icmp: true
   # Only the ports you list are probed — there is no default UDP sweep.
   tcp_ports: [22, 80, 443, 445, 3389, 161]
-  udp_ports: []                          # e.g. [53, 123, 161, 500, 1900, 5353]
+  udp_ports: [5353, 1900]                # mDNS + SSDP by default; add e.g. 53, 123, 161, 500
   # SNMP community strings, tried in order against each host (first that answers
   # wins). Visible/editable (also in the Settings UI) — community strings are
   # low-sensitivity. The legacy single TESSERA_SNMP_COMMUNITY env value still
@@ -80,6 +80,8 @@ discovery:
   active_reverse_dns: true # PTR lookups for live hosts
   active_arp_table: true   # harvest the kernel ARP cache after a sweep
   active_snmp: true        # SNMP sysName/sysDescr (needs a community string)
+  active_mdns: true        # unicast mDNS query → service types + model= (Fire TV, Apple TV, Cast, Ring, …)
+  active_media: true       # AirPlay (:49152) + Google Cast (:8008) HTTP identity probes (exact model + name)
   tcp_behavioral: true     # closed-port timing → weak OS/firewall fingerprint
   thorough_wake: true      # extra wake pass for power-saving devices (slower sweep)
 

@@ -100,6 +100,8 @@ type Editable struct {
 	DiscActiveReverseDNS bool `json:"disc_active_reverse_dns"`
 	DiscActiveARPTable   bool `json:"disc_active_arp_table"`
 	DiscActiveSNMP       bool `json:"disc_active_snmp"`
+	DiscActiveMDNS       bool `json:"disc_active_mdns"`
+	DiscActiveMedia      bool `json:"disc_active_media"`
 	DiscTCPBehavioral    bool `json:"disc_tcp_behavioral"`
 	DiscThoroughWake     bool `json:"disc_thorough_wake"`
 }
@@ -284,7 +286,8 @@ func applyEditable(c *config.Config, e Editable) {
 		ActiveICMP: b(e.DiscActiveICMP), ActiveTCP: b(e.DiscActiveTCP), ActiveUDP: b(e.DiscActiveUDP),
 		ActiveBanners:    b(e.DiscActiveBanners),
 		ActiveReverseDNS: b(e.DiscActiveReverseDNS), ActiveARPTable: b(e.DiscActiveARPTable),
-		ActiveSNMP: b(e.DiscActiveSNMP), TCPBehavioral: b(e.DiscTCPBehavioral), ThoroughWake: b(e.DiscThoroughWake),
+		ActiveSNMP: b(e.DiscActiveSNMP), ActiveMDNS: b(e.DiscActiveMDNS), ActiveMedia: b(e.DiscActiveMedia),
+		TCPBehavioral: b(e.DiscTCPBehavioral), ThoroughWake: b(e.DiscThoroughWake),
 	}
 }
 
@@ -343,6 +346,8 @@ func extractEditable(c config.Config) Editable {
 		DiscActiveReverseDNS: d.ActiveReverseDNS,
 		DiscActiveARPTable:   d.ActiveARPTable,
 		DiscActiveSNMP:       d.ActiveSNMP,
+		DiscActiveMDNS:       d.ActiveMDNS,
+		DiscActiveMedia:      d.ActiveMedia,
 		DiscTCPBehavioral:    d.TCPBehavioral,
 		DiscThoroughWake:     d.ThoroughWake,
 	}

@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -222,7 +223,7 @@ func (s *Server) routes() http.Handler {
 
 	mux.Handle("/", web.Handler())
 
-	return logRequests(s.log, s.authGate(mux))
+	return logRequests(s.log, v1Alias(s.authGate(mux)))
 }
 
 // ListenAndServe binds and serves (HTTP or HTTPS) until ctx is cancelled.
@@ -280,6 +281,23 @@ func writeErr(w http.ResponseWriter, status int, msg string) {
 
 func contextWithTimeout(r *http.Request, d time.Duration) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(r.Context(), d)
+}
+
+// v1Alias serves the stable /api/v1/* surface by rewriting to the same /api/*
+// handlers — one contract, one implementation, guaranteed parity. New consumers
+// (CableMap, runbook generator, scripts) pin /api/v1 for a stable path; the bare
+// /api/* stays as a convenience alias that tracks latest. Rewriting happens
+// before authGate, so auth applies to the resolved path unchanged.
+func v1Alias(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/v1/") {
+			r2 := r.Clone(r.Context())
+			r2.URL.Path = "/api/" + strings.TrimPrefix(r.URL.Path, "/api/v1/")
+			next.ServeHTTP(w, r2)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func logRequests(log *slog.Logger, next http.Handler) http.Handler {

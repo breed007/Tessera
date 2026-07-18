@@ -1530,7 +1530,7 @@ async function openSettings() {
     </div>
 
     <div class="settings-section"><h3>API tokens</h3>
-      <p class="muted-note">Named tokens for API consumers (dashboards, CableMap, the runbook generator, scripts). Send as <code>Authorization: Bearer &lt;token&gt;</code> or <code>X-API-Token</code>. Viewer = read-only (recommended). The contract is at <a href="/api/openapi.json" target="_blank">/api/openapi.json</a>.</p>
+      <p class="muted-note">Named tokens for API consumers (dashboards, CableMap, the runbook generator, scripts). Send as <code>Authorization: Bearer &lt;token&gt;</code> or <code>X-API-Token</code>. Viewer = read-only (recommended). Pin the stable <code>/api/v1</code> base for integrations; the contract is at <a href="/api/openapi.json" target="_blank">/api/openapi.json</a>. Poll <code>/api/v1/events?since=&lt;cursor&gt;</code> to sync just what changed.</p>
       <div id="token-new"></div>
       <div id="token-list">${(tokens || []).map(tokenRow).join("") || `<p class="muted-note">No tokens yet.</p>`}</div>
       <div class="field row" style="margin-top:10px">

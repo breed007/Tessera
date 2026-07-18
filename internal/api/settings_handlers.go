@@ -14,6 +14,7 @@ import (
 	"github.com/tessera/tessera/internal/collector/fingerbank"
 	"github.com/tessera/tessera/internal/collector/proxmox"
 	"github.com/tessera/tessera/internal/collector/unifi"
+	"github.com/tessera/tessera/internal/config"
 	"github.com/tessera/tessera/internal/settings"
 )
 
@@ -188,21 +189,34 @@ func (s *Server) handleTestProxmox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
+		Index     int    `json:"index"` // which instance's saved secret to fall back to
 		BaseURL   string `json:"base_url"`
-		Token     string `json:"token"`
 		VerifyTLS bool   `json:"verify_tls"`
+		AuthMode  string `json:"auth_mode"` // "token" | "password"
+		Username  string `json:"username"`
+		Token     string `json:"token"`
+		Password  string `json:"password"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad JSON")
 		return
 	}
-	tok := req.Token
-	if tok == "" {
-		tok = s.cfg.Secrets.ProxmoxToken // fall back to the saved secret
+	auth := proxmox.Auth{}
+	if req.AuthMode == "password" {
+		auth.Username = req.Username
+		auth.Password = req.Password
+		if auth.Password == "" && req.Index >= 0 && req.Index < config.MaxProxmoxInstances {
+			auth.Password = s.cfg.Secrets.ProxmoxPasswords[req.Index] // fall back to the saved secret
+		}
+	} else {
+		auth.Token = req.Token
+		if auth.Token == "" && req.Index >= 0 && req.Index < config.MaxProxmoxInstances {
+			auth.Token = s.cfg.Secrets.ProxmoxTokens[req.Index]
+		}
 	}
 	ctx, cancel := contextWithTimeout(r, 20*time.Second)
 	defer cancel()
-	n, err := proxmox.Test(ctx, proxmox.Config{BaseURL: req.BaseURL, Token: tok, VerifyTLS: req.VerifyTLS})
+	n, err := proxmox.Test(ctx, proxmox.Config{BaseURL: req.BaseURL, VerifyTLS: req.VerifyTLS, Auth: auth})
 	testResult(w, fmt.Sprintf("%d node(s)", n), err)
 }
 

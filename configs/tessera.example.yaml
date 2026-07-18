@@ -115,12 +115,24 @@ fingerbank:
 proxmox:
   # Read-only Proxmox VE collector: pulls VM/CT inventory so guests get named +
   # classified from the hypervisor (otherwise they show as bare Proxmox MACs).
-  # Create a read-only API token (Datacenter -> API Tokens, PVEAuditor on /).
+  # Up to 5 instances, each with its own auth. Read-only either way — grant
+  # PVEAuditor on / (API token: Datacenter -> API Tokens; or a user@realm login).
   enabled: false
-  base_url: ""            # e.g. https://proxmox.lan:8006
-  verify_tls: false       # PVE ships a self-signed cert
   poll_interval: 5m
-  # token via env: TESSERA_PROXMOX_TOKEN=user@realm!tokenid=secret
+  instances: []
+  # instances:
+  #   - name: pve-main            # optional label (shown in status)
+  #     base_url: https://proxmox.lan:8006
+  #     verify_tls: false         # PVE ships a self-signed cert
+  #     auth_mode: token          # "token" | "password"
+  #   - name: pve-lab
+  #     base_url: https://10.0.5.9:8006
+  #     verify_tls: false
+  #     auth_mode: password
+  #     username: monitor@pve
+  # Instance-0 credentials via env: TESSERA_PROXMOX_TOKEN (token mode) or
+  # TESSERA_PROXMOX_PASSWORD (password mode). Others: set via the Settings UI
+  # (encrypted at rest) — keys secret.proxmox_token_1.. / secret.proxmox_password_1..
 
 dhcp:
   # Ingest DHCP server lease tables (dnsmasq-family lease files: dnsmasq, Pi-hole,

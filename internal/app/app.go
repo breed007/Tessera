@@ -263,12 +263,29 @@ func buildCollectors(cfg config.Config, st store.Store, log *slog.Logger) ([]col
 		log.Info("collector enabled", "name", d.Name(), "hosts_files", len(cfg.DNS.HostsFiles), "server", cfg.DNS.ServerType)
 	}
 
-	if cfg.Proxmox.Enabled && cfg.Proxmox.BaseURL != "" {
-		px := proxmox.NewPoller(proxmox.Config{
-			BaseURL: cfg.Proxmox.BaseURL, VerifyTLS: cfg.Proxmox.VerifyTLS, Token: cfg.Secrets.ProxmoxToken,
-		}, cfg.Proxmox.PollInterval, log)
-		cs = append(cs, px)
-		log.Info("collector enabled", "name", px.Name(), "base_url", cfg.Proxmox.BaseURL)
+	if cfg.Proxmox.Enabled {
+		for i, inst := range cfg.Proxmox.Instances {
+			if inst.BaseURL == "" || i >= config.MaxProxmoxInstances {
+				continue
+			}
+			auth := proxmox.Auth{}
+			if inst.AuthMode == "password" {
+				auth.Username, auth.Password = inst.Username, cfg.Secrets.ProxmoxPasswords[i]
+			} else {
+				auth.Token = cfg.Secrets.ProxmoxTokens[i]
+			}
+			name := "proxmox"
+			if inst.Name != "" {
+				name = "proxmox:" + inst.Name
+			} else if i > 0 {
+				name = fmt.Sprintf("proxmox:%d", i+1)
+			}
+			px := proxmox.NewPoller(name, proxmox.Config{
+				BaseURL: inst.BaseURL, VerifyTLS: inst.VerifyTLS, Auth: auth,
+			}, cfg.Proxmox.PollInterval, log)
+			cs = append(cs, px)
+			log.Info("collector enabled", "name", px.Name(), "base_url", inst.BaseURL, "auth", inst.AuthMode)
+		}
 	}
 
 	// Fingerbank is privacy-relevant and OFF by default (§7): only built when

@@ -14,6 +14,7 @@ const (
 	EnvUniFiPassword   = "TESSERA_UNIFI_PASSWORD"
 	EnvUniFiAPIKey     = "TESSERA_UNIFI_API_KEY"
 	EnvProxmoxToken    = "TESSERA_PROXMOX_TOKEN"
+	EnvProxmoxPassword = "TESSERA_PROXMOX_PASSWORD"
 	EnvDNSServerToken  = "TESSERA_DNS_SERVER_TOKEN"
 	EnvFingerbankKey   = "TESSERA_FINGERBANK_KEY"
 	EnvSNMPCommunity   = "TESSERA_SNMP_COMMUNITY"
@@ -47,6 +48,7 @@ func Load(path string) (Config, error) {
 		}
 	}
 
+	cfg.Proxmox.Normalize()
 	loadSecrets(&cfg)
 
 	if err := cfg.Validate(); err != nil {
@@ -62,7 +64,6 @@ func loadSecrets(cfg *Config) {
 		UniFiUsername:   os.Getenv(EnvUniFiUsername),
 		UniFiPassword:   os.Getenv(EnvUniFiPassword),
 		UniFiAPIKey:     os.Getenv(EnvUniFiAPIKey),
-		ProxmoxToken:    os.Getenv(EnvProxmoxToken),
 		DNSServerToken:  os.Getenv(EnvDNSServerToken),
 		FingerbankKey:   os.Getenv(EnvFingerbankKey),
 		SNMPCommunity:   os.Getenv(EnvSNMPCommunity),
@@ -71,6 +72,9 @@ func loadSecrets(cfg *Config) {
 		SecretKey:       os.Getenv(EnvSecretKey),
 		AlertWebhookURL: os.Getenv(EnvAlertWebhookURL),
 	}
+	// Instance-0 Proxmox credentials seed from env for back-compat / headless use.
+	cfg.Secrets.ProxmoxTokens[0] = os.Getenv(EnvProxmoxToken)
+	cfg.Secrets.ProxmoxPasswords[0] = os.Getenv(EnvProxmoxPassword)
 }
 
 // Validate enforces the safety invariants the spec calls out, most importantly

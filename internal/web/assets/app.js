@@ -1259,6 +1259,32 @@ async function openSettings() {
   const txt = (id, label, val) => `<div class="field"><label>${label}</label><input type="text" id="${id}" value="${esc(val ?? "")}"></div>`;
   const chk = (id, label, on) => `<div class="field row"><input type="checkbox" id="${id}" ${on ? "checked" : ""}><label>${label}</label></div>`;
 
+  // Proxmox VE: up to 5 instances, each with its own URL + auth (token OR user/pass).
+  const pxInstances = e.proxmox_instances || [];
+  const pxTokFlags = flags.proxmox_tokens_set || [];
+  const pxPassFlags = flags.proxmox_passwords_set || [];
+  const pxSlot = (i) => {
+    const inst = pxInstances[i] || {};
+    const mode = inst.auth_mode || "token";
+    const hidden = i > 0 && !inst.base_url; // slot 0 always shown; extras revealed via "Add"
+    return `<div class="px-inst" data-px="${i}" ${hidden ? 'style="display:none"' : ""}>
+      <div class="px-inst-head">Instance ${i + 1}${i === 0 ? " · primary" : ""} ${i === 0 ? statusBadge("proxmox") : statusBadge("proxmox:" + (inst.name || (i + 1)))}</div>
+      ${txt(`set-px-name-${i}`, "Label (optional)", inst.name)}
+      ${txt(`set-px-url-${i}`, "Base URL (https://proxmox.lan:8006)", inst.base_url)}
+      ${chk(`set-px-verify-${i}`, "Verify TLS", inst.verify_tls)}
+      <div class="field"><label>Authentication</label><select id="set-px-auth-${i}" class="px-auth" data-px="${i}">
+        <option value="token" ${mode === "token" ? "selected" : ""}>API token</option>
+        <option value="password" ${mode === "password" ? "selected" : ""}>Username + password</option></select></div>
+      <div class="px-tok-${i}" ${mode === "password" ? 'style="display:none"' : ""}>
+        ${secField(`set-px-token-${i}`, "API token (user@realm!tokenid=secret)", pxTokFlags[i])}</div>
+      <div class="px-pass-${i}" ${mode === "token" ? 'style="display:none"' : ""}>
+        ${txt(`set-px-user-${i}`, "Username (user@realm, e.g. root@pam)", inst.username)}
+        ${secField(`set-px-pass-${i}`, "Password", pxPassFlags[i])}</div>
+      <button class="btn" id="btn-test-px-${i}">Test</button><span class="test-result" id="tr-px-${i}"></span>
+    </div>`;
+  };
+  const pxSlots = [0, 1, 2, 3, 4].map(pxSlot).join("");
+
   $("settings-body").innerHTML = `
     <h2>Settings</h2>
     ${s.restart_pending ? `<div class="restart-banner"><span>A change needs a restart to apply.</span><button class="btn" id="btn-restart">Restart now</button></div>` : ""}
@@ -1283,13 +1309,11 @@ async function openSettings() {
       <button class="btn" id="btn-test-unifi">Test connection</button><span class="test-result" id="tr-unifi"></span>
     </div>
 
-    <div class="settings-section"><h3>Proxmox VE ${statusBadge("proxmox")}</h3>
+    <div class="settings-section"><h3>Proxmox VE</h3>
       ${chk("set-px-en", "Enabled", e.proxmox_enabled)}
-      ${txt("set-px-url", "Base URL (e.g. https://proxmox.lan:8006)", e.proxmox_base_url)}
-      <p class="muted-note">Pulls VM/CT inventory so guests get named + classified from the hypervisor. Create a read-only API token: Datacenter → API Tokens (grant <code>PVEAuditor</code> on <code>/</code>). Paste the full <code>user@realm!tokenid=secret</code>.</p>
-      ${chk("set-px-verify", "Verify TLS", e.proxmox_verify_tls)}
-      ${secField("set-px-token", "API token", flags.proxmox_token_set)}
-      <button class="btn" id="btn-test-px">Test connection</button><span class="test-result" id="tr-px"></span>
+      <p class="muted-note">Pulls VM/CT inventory so guests get named + classified from the hypervisor. Up to 5 clusters/nodes, each with its own auth. Read-only either way — an API token (Datacenter → API Tokens, grant <code>PVEAuditor</code> on <code>/</code>) or a username+password (<code>user@realm</code>, e.g. <code>root@pam</code>).</p>
+      ${pxSlots}
+      <button class="ghost" id="btn-px-add">+ Add Proxmox instance</button>
     </div>
 
     <div class="settings-section"><h3>SNMP</h3>
@@ -1502,9 +1526,27 @@ function wireSettings(canSec) {
     base_url: val("set-unifi-url"), path_prefix: val("set-unifi-prefix"), site: val("set-unifi-site"),
     verify_tls: checked("set-unifi-verify"), username: $("set-unifi-user").value, password: $("set-unifi-pass").value, api_key: $("set-unifi-key").value,
   });
-  if ($("btn-test-px")) $("btn-test-px").onclick = () => runTest("/api/test/proxmox", "tr-px", {
-    base_url: val("set-px-url"), verify_tls: checked("set-px-verify"), token: $("set-px-token").value,
-  });
+  for (let i = 0; i < 5; i++) {
+    const tb = $(`btn-test-px-${i}`);
+    if (tb) tb.onclick = () => runTest("/api/test/proxmox", `tr-px-${i}`, {
+      index: i, base_url: val(`set-px-url-${i}`), verify_tls: checked(`set-px-verify-${i}`),
+      auth_mode: val(`set-px-auth-${i}`), username: val(`set-px-user-${i}`),
+      token: $(`set-px-token-${i}`).value, password: $(`set-px-pass-${i}`).value,
+    });
+    const as = $(`set-px-auth-${i}`);
+    if (as) as.onchange = () => {
+      const pw = as.value === "password";
+      const tok = document.querySelector(`.px-tok-${i}`), pass = document.querySelector(`.px-pass-${i}`);
+      if (tok) tok.style.display = pw ? "none" : "";
+      if (pass) pass.style.display = pw ? "" : "none";
+    };
+  }
+  if ($("btn-px-add")) $("btn-px-add").onclick = () => {
+    for (const slot of document.querySelectorAll(".px-inst")) {
+      if (slot.style.display === "none") { slot.style.display = ""; return; }
+    }
+    toast("Up to 5 Proxmox instances");
+  };
   if ($("btn-test-dns")) $("btn-test-dns").onclick = () => runTest("/api/test/dns", "tr-dns", {
     type: val("set-dns-type"), url: val("set-dns-url"), user: val("set-dns-user"), token: $("set-dns-token").value,
   });
@@ -1565,7 +1607,11 @@ function wireSettings(canSec) {
       api_listen_addr: val("set-listen"), tls_enabled: checked("set-tls"),
       unifi_enabled: checked("set-unifi-en"), unifi_base_url: val("set-unifi-url"), unifi_path_prefix: val("set-unifi-prefix"),
       unifi_site: val("set-unifi-site"), unifi_verify_tls: checked("set-unifi-verify"),
-      proxmox_enabled: checked("set-px-en"), proxmox_base_url: val("set-px-url"), proxmox_verify_tls: checked("set-px-verify"),
+      proxmox_enabled: checked("set-px-en"),
+      proxmox_instances: [0, 1, 2, 3, 4].map((i) => ({
+        name: val(`set-px-name-${i}`), base_url: val(`set-px-url-${i}`), verify_tls: checked(`set-px-verify-${i}`),
+        auth_mode: val(`set-px-auth-${i}`) || "token", username: val(`set-px-user-${i}`),
+      })).filter((x) => x.base_url),
       fingerbank_enabled: checked("set-fb-en"), fingerbank_mode: $("set-fb-mode").value,
       active_probe_enabled: checked("set-ap-en"),
       active_probe_subnets: splitList(val("set-ap-subnets")),
@@ -1595,7 +1641,14 @@ function wireSettings(canSec) {
     if (canSec) {
       const add = (k, id) => { const v = secInput(id); if (v !== undefined) secrets[k] = v; };
       add("unifi_username", "set-unifi-user"); add("unifi_password", "set-unifi-pass"); add("unifi_api_key", "set-unifi-key");
-      add("proxmox_token", "set-px-token");
+      const pxTokens = [], pxPasswords = [];
+      let anyTok = false, anyPass = false;
+      for (let i = 0; i < 5; i++) {
+        const t = secInput(`set-px-token-${i}`); pxTokens[i] = t === undefined ? null : t; if (t !== undefined) anyTok = true;
+        const p = secInput(`set-px-pass-${i}`); pxPasswords[i] = p === undefined ? null : p; if (p !== undefined) anyPass = true;
+      }
+      if (anyTok) secrets.proxmox_tokens = pxTokens;
+      if (anyPass) secrets.proxmox_passwords = pxPasswords;
       add("dns_server_token", "set-dns-token");
       add("fingerbank_key", "set-fb-key"); add("alert_url", "set-al-url");
     }

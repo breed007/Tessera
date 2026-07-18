@@ -139,3 +139,32 @@ storage: {driver: mysql, dsn: x}
 		t.Fatal("expected validation error for unsupported driver")
 	}
 }
+
+func TestProxmoxNormalizeLegacy(t *testing.T) {
+	// A pre-multi-instance config with the old top-level base_url should migrate
+	// into Instances[0] with token auth.
+	p := &Proxmox{Enabled: true, BaseURL: "https://pve.lan:8006", VerifyTLS: true}
+	p.Normalize()
+	if len(p.Instances) != 1 {
+		t.Fatalf("got %d instances, want 1", len(p.Instances))
+	}
+	if p.Instances[0].BaseURL != "https://pve.lan:8006" || !p.Instances[0].VerifyTLS || p.Instances[0].AuthMode != "token" {
+		t.Fatalf("bad migration: %+v", p.Instances[0])
+	}
+}
+
+func TestProxmoxNormalizeCapAndDefault(t *testing.T) {
+	p := &Proxmox{}
+	for i := 0; i < 8; i++ {
+		p.Instances = append(p.Instances, ProxmoxInstance{BaseURL: "https://h"})
+	}
+	p.Normalize()
+	if len(p.Instances) != MaxProxmoxInstances {
+		t.Fatalf("got %d instances, want cap %d", len(p.Instances), MaxProxmoxInstances)
+	}
+	for i, inst := range p.Instances {
+		if inst.AuthMode != "token" {
+			t.Errorf("instance %d auth_mode = %q, want defaulted to token", i, inst.AuthMode)
+		}
+	}
+}

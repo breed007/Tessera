@@ -14,23 +14,28 @@ import (
 // their VMs and CTs, reads each guest's config, and emits MAC-keyed observations.
 type Poller struct {
 	client   *Client
+	name     string
 	interval time.Duration
 	log      *slog.Logger
 	*collector.Health
 }
 
-// NewPoller builds a Proxmox poller.
-func NewPoller(cfg Config, interval time.Duration, log *slog.Logger) *Poller {
+// NewPoller builds a Proxmox poller. name distinguishes multiple instances in the
+// collector list and health/status display (e.g. "proxmox" or "proxmox:pve-lab").
+func NewPoller(name string, cfg Config, interval time.Duration, log *slog.Logger) *Poller {
 	if interval <= 0 {
 		interval = 5 * time.Minute
+	}
+	if name == "" {
+		name = "proxmox"
 	}
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Poller{client: New(cfg), interval: interval, log: log, Health: collector.NewHealth("proxmox", "not polled yet")}
+	return &Poller{client: New(cfg), name: name, interval: interval, log: log, Health: collector.NewHealth(name, "not polled yet")}
 }
 
-func (p *Poller) Name() string { return "proxmox" }
+func (p *Poller) Name() string { return p.name }
 
 // Run polls until ctx is cancelled; a failed cycle is logged and retried.
 func (p *Poller) Run(ctx context.Context, sink *observation.Sink) error {

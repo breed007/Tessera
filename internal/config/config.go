@@ -177,13 +177,48 @@ type Reconcile struct {
 	ForgetDormantDays    int  `yaml:"forget_dormant_days"`
 }
 
-// Proxmox configures the read-only Proxmox VE collector (VM/CT inventory). The
-// API token is a secret (env TESSERA_PROXMOX_TOKEN). Off by default.
+// MaxProxmoxInstances caps how many Proxmox VE endpoints can be polled at once.
+const MaxProxmoxInstances = 5
+
+// Proxmox configures the read-only Proxmox VE collector (VM/CT inventory). Up to
+// MaxProxmoxInstances endpoints, each with its own URL and auth. Per-instance
+// credentials are secrets (matched by index): token env TESSERA_PROXMOX_TOKEN and
+// password env TESSERA_PROXMOX_PASSWORD seed instance 0. Off by default.
 type Proxmox struct {
-	Enabled      bool          `yaml:"enabled"`
-	BaseURL      string        `yaml:"base_url"`   // https://proxmox.lan:8006
-	VerifyTLS    bool          `yaml:"verify_tls"` // self-signed PVE cert → false
-	PollInterval time.Duration `yaml:"poll_interval"`
+	Enabled      bool              `yaml:"enabled"`
+	PollInterval time.Duration     `yaml:"poll_interval"`
+	Instances    []ProxmoxInstance `yaml:"instances"`
+
+	// Deprecated single-instance fields (pre-multi-instance configs). Migrated
+	// into Instances[0] by Normalize; kept only for back-compat parsing.
+	BaseURL   string `yaml:"base_url,omitempty"`
+	VerifyTLS bool   `yaml:"verify_tls,omitempty"`
+}
+
+// ProxmoxInstance is one PVE endpoint. AuthMode selects how the matching secret
+// (Secrets.ProxmoxTokens[i] / ProxmoxPasswords[i]) is used.
+type ProxmoxInstance struct {
+	Name      string `yaml:"name" json:"name"`             // display label (e.g. "pve-lab"); optional
+	BaseURL   string `yaml:"base_url" json:"base_url"`     // https://proxmox.lan:8006
+	VerifyTLS bool   `yaml:"verify_tls" json:"verify_tls"` // self-signed PVE cert → false
+	AuthMode  string `yaml:"auth_mode" json:"auth_mode"`   // "token" (default) | "password"
+	Username  string `yaml:"username" json:"username"`     // password mode: user@realm (e.g. root@pam)
+}
+
+// Normalize migrates a legacy single-instance Proxmox config into Instances[0]
+// so old configs keep working after the multi-instance upgrade.
+func (p *Proxmox) Normalize() {
+	if len(p.Instances) == 0 && p.BaseURL != "" {
+		p.Instances = []ProxmoxInstance{{BaseURL: p.BaseURL, VerifyTLS: p.VerifyTLS, AuthMode: "token"}}
+	}
+	if len(p.Instances) > MaxProxmoxInstances {
+		p.Instances = p.Instances[:MaxProxmoxInstances]
+	}
+	for i := range p.Instances {
+		if p.Instances[i].AuthMode == "" {
+			p.Instances[i].AuthMode = "token"
+		}
+	}
 }
 
 // DNS configures ingestion of authoritative name↔IP records from any local DNS:
@@ -217,17 +252,18 @@ type Storage struct {
 
 // Secrets holds values that must never touch the config file or logs (§5).
 type Secrets struct {
-	UniFiUsername   string
-	UniFiPassword   string
-	UniFiAPIKey     string
-	ProxmoxToken    string // Proxmox VE API token (user@realm!tokenid=secret)
-	DNSServerToken  string // DNS-server API password/token (AdGuard/Pi-hole/Technitium)
-	FingerbankKey   string
-	SNMPCommunity   string
-	APIToken        string // optional bearer token for the HTTP API (§M8)
-	APIPasswordHash string // bcrypt hash of the bootstrap admin password (§M9)
-	SecretKey       string // master key for encrypting settings secrets at rest (§M10)
-	AlertWebhookURL string // destination URL for alert notifications (may carry a token)
+	UniFiUsername    string
+	UniFiPassword    string
+	UniFiAPIKey      string
+	ProxmoxTokens    [MaxProxmoxInstances]string // per-instance PVE API tokens
+	ProxmoxPasswords [MaxProxmoxInstances]string // per-instance PVE ticket passwords
+	DNSServerToken   string                      // DNS-server API password/token (AdGuard/Pi-hole/Technitium)
+	FingerbankKey    string
+	SNMPCommunity    string
+	APIToken         string // optional bearer token for the HTTP API (§M8)
+	APIPasswordHash  string // bcrypt hash of the bootstrap admin password (§M9)
+	SecretKey        string // master key for encrypting settings secrets at rest (§M10)
+	AlertWebhookURL  string // destination URL for alert notifications (may carry a token)
 }
 
 // Alerts configures proactive notifications dispatched on reconciliation deltas.
@@ -267,7 +303,6 @@ func Default() Config {
 		},
 		Proxmox: Proxmox{
 			Enabled:      false,
-			VerifyTLS:    false,
 			PollInterval: 5 * time.Minute,
 		},
 		DHCP: DHCP{

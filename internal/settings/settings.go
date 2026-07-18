@@ -7,6 +7,7 @@ package settings
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 
 	"github.com/tessera/tessera/internal/config"
@@ -26,12 +27,28 @@ const (
 	secUniFiUser  = "secret.unifi_username"
 	secUniFiPass  = "secret.unifi_password"
 	secUniFiKey   = "secret.unifi_api_key"
-	secProxmox    = "secret.proxmox_token"
 	secDNSToken   = "secret.dns_server_token"
 	secSNMP       = "secret.snmp_community"
 	secFingerbank = "secret.fingerbank_key"
 	secAlertURL   = "secret.alert_webhook_url"
 )
+
+// Per-instance Proxmox secret keys. Instance 0 keeps the legacy un-suffixed key
+// so a single-instance config configured before the multi-instance upgrade still
+// decrypts.
+func secProxmoxToken(i int) string {
+	if i == 0 {
+		return "secret.proxmox_token"
+	}
+	return fmt.Sprintf("secret.proxmox_token_%d", i)
+}
+
+func secProxmoxPassword(i int) string {
+	if i == 0 {
+		return "secret.proxmox_password"
+	}
+	return fmt.Sprintf("secret.proxmox_password_%d", i)
+}
 
 // Editable is the UI-editable surface of the configuration (non-secret).
 type Editable struct {
@@ -44,9 +61,11 @@ type Editable struct {
 	UniFiSite       string `json:"unifi_site"`
 	UniFiVerifyTLS  bool   `json:"unifi_verify_tls"`
 
-	ProxmoxEnabled   bool   `json:"proxmox_enabled"`
-	ProxmoxBaseURL   string `json:"proxmox_base_url"`
-	ProxmoxVerifyTLS bool   `json:"proxmox_verify_tls"`
+	ProxmoxEnabled   bool                     `json:"proxmox_enabled"`
+	ProxmoxInstances []config.ProxmoxInstance `json:"proxmox_instances"`
+	// Deprecated single-instance fields (migrated into ProxmoxInstances[0]).
+	ProxmoxBaseURL   string `json:"proxmox_base_url,omitempty"`
+	ProxmoxVerifyTLS bool   `json:"proxmox_verify_tls,omitempty"`
 
 	FingerbankEnabled bool   `json:"fingerbank_enabled"`
 	FingerbankMode    string `json:"fingerbank_mode"`
@@ -109,26 +128,28 @@ type Editable struct {
 // SecretsInput carries secret values from the UI. An empty field means "leave
 // unchanged"; a non-empty field replaces the stored (encrypted) value.
 type SecretsInput struct {
-	UniFiUsername  *string `json:"unifi_username,omitempty"`
-	UniFiPassword  *string `json:"unifi_password,omitempty"`
-	UniFiAPIKey    *string `json:"unifi_api_key,omitempty"`
-	ProxmoxToken   *string `json:"proxmox_token,omitempty"`
-	DNSServerToken *string `json:"dns_server_token,omitempty"`
-	SNMPCommunity  *string `json:"snmp_community,omitempty"`
-	FingerbankKey  *string `json:"fingerbank_key,omitempty"`
-	AlertURL       *string `json:"alert_url,omitempty"`
+	UniFiUsername    *string                             `json:"unifi_username,omitempty"`
+	UniFiPassword    *string                             `json:"unifi_password,omitempty"`
+	UniFiAPIKey      *string                             `json:"unifi_api_key,omitempty"`
+	ProxmoxTokens    [config.MaxProxmoxInstances]*string `json:"proxmox_tokens,omitempty"`
+	ProxmoxPasswords [config.MaxProxmoxInstances]*string `json:"proxmox_passwords,omitempty"`
+	DNSServerToken   *string                             `json:"dns_server_token,omitempty"`
+	SNMPCommunity    *string                             `json:"snmp_community,omitempty"`
+	FingerbankKey    *string                             `json:"fingerbank_key,omitempty"`
+	AlertURL         *string                             `json:"alert_url,omitempty"`
 }
 
 // SecretFlags reports which secrets are currently set (without revealing them).
 type SecretFlags struct {
-	UniFiUsername  bool `json:"unifi_username_set"`
-	UniFiPassword  bool `json:"unifi_password_set"`
-	UniFiAPIKey    bool `json:"unifi_api_key_set"`
-	ProxmoxToken   bool `json:"proxmox_token_set"`
-	DNSServerToken bool `json:"dns_server_token_set"`
-	SNMPCommunity  bool `json:"snmp_community_set"`
-	FingerbankKey  bool `json:"fingerbank_key_set"`
-	AlertURL       bool `json:"alert_url_set"`
+	UniFiUsername    bool                             `json:"unifi_username_set"`
+	UniFiPassword    bool                             `json:"unifi_password_set"`
+	UniFiAPIKey      bool                             `json:"unifi_api_key_set"`
+	ProxmoxTokens    [config.MaxProxmoxInstances]bool `json:"proxmox_tokens_set"`
+	ProxmoxPasswords [config.MaxProxmoxInstances]bool `json:"proxmox_passwords_set"`
+	DNSServerToken   bool                             `json:"dns_server_token_set"`
+	SNMPCommunity    bool                             `json:"snmp_community_set"`
+	FingerbankKey    bool                             `json:"fingerbank_key_set"`
+	AlertURL         bool                             `json:"alert_url_set"`
 }
 
 // Service reads/writes the editable settings, applying encryption for secrets.
@@ -156,11 +177,16 @@ func (s *Service) Effective(ctx context.Context, base config.Config) (config.Con
 		}
 	}
 	// Decrypt secret overrides (DB wins over env when set).
-	for key, dst := range map[string]*string{
+	dsts := map[string]*string{
 		secUniFiUser: &base.Secrets.UniFiUsername, secUniFiPass: &base.Secrets.UniFiPassword,
-		secUniFiKey: &base.Secrets.UniFiAPIKey, secProxmox: &base.Secrets.ProxmoxToken, secDNSToken: &base.Secrets.DNSServerToken,
+		secUniFiKey: &base.Secrets.UniFiAPIKey, secDNSToken: &base.Secrets.DNSServerToken,
 		secSNMP: &base.Secrets.SNMPCommunity, secFingerbank: &base.Secrets.FingerbankKey, secAlertURL: &base.Secrets.AlertWebhookURL,
-	} {
+	}
+	for i := 0; i < config.MaxProxmoxInstances; i++ {
+		dsts[secProxmoxToken(i)] = &base.Secrets.ProxmoxTokens[i]
+		dsts[secProxmoxPassword(i)] = &base.Secrets.ProxmoxPasswords[i]
+	}
+	for key, dst := range dsts {
 		if v, ok, _ := s.store.SettingGet(ctx, key); ok && v != "" {
 			if plain, err := s.cipher.Open(v); err == nil && plain != "" {
 				*dst = plain
@@ -179,7 +205,11 @@ func (s *Service) Effective(ctx context.Context, base config.Config) (config.Con
 // master key (e.g. a backup restored onto a server with a different key).
 func (s *Service) DecryptFailures(ctx context.Context) int {
 	n := 0
-	for _, key := range []string{secUniFiUser, secUniFiPass, secUniFiKey, secProxmox, secDNSToken, secSNMP, secFingerbank, secAlertURL} {
+	keys := []string{secUniFiUser, secUniFiPass, secUniFiKey, secDNSToken, secSNMP, secFingerbank, secAlertURL}
+	for i := 0; i < config.MaxProxmoxInstances; i++ {
+		keys = append(keys, secProxmoxToken(i), secProxmoxPassword(i))
+	}
+	for _, key := range keys {
 		if v, ok, _ := s.store.SettingGet(ctx, key); ok && v != "" {
 			if _, err := s.cipher.Open(v); err != nil {
 				n++
@@ -209,11 +239,16 @@ func (s *Service) SaveEditable(ctx context.Context, e Editable) error {
 
 // SaveSecrets encrypts and stores any provided secret fields.
 func (s *Service) SaveSecrets(ctx context.Context, in SecretsInput) error {
-	for key, val := range map[string]*string{
+	vals := map[string]*string{
 		secUniFiUser: in.UniFiUsername, secUniFiPass: in.UniFiPassword, secUniFiKey: in.UniFiAPIKey,
-		secProxmox: in.ProxmoxToken, secDNSToken: in.DNSServerToken,
-		secSNMP: in.SNMPCommunity, secFingerbank: in.FingerbankKey, secAlertURL: in.AlertURL,
-	} {
+		secDNSToken: in.DNSServerToken,
+		secSNMP:     in.SNMPCommunity, secFingerbank: in.FingerbankKey, secAlertURL: in.AlertURL,
+	}
+	for i := 0; i < config.MaxProxmoxInstances; i++ {
+		vals[secProxmoxToken(i)] = in.ProxmoxTokens[i]
+		vals[secProxmoxPassword(i)] = in.ProxmoxPasswords[i]
+	}
+	for key, val := range vals {
 		if val == nil {
 			continue
 		}
@@ -230,11 +265,16 @@ func (s *Service) SaveSecrets(ctx context.Context, in SecretsInput) error {
 
 func (s *Service) secretFlags(ctx context.Context) SecretFlags {
 	isSet := func(k string) bool { v, ok, _ := s.store.SettingGet(ctx, k); return ok && v != "" }
-	return SecretFlags{
+	f := SecretFlags{
 		UniFiUsername: isSet(secUniFiUser), UniFiPassword: isSet(secUniFiPass), UniFiAPIKey: isSet(secUniFiKey),
-		ProxmoxToken: isSet(secProxmox), DNSServerToken: isSet(secDNSToken),
-		SNMPCommunity: isSet(secSNMP), FingerbankKey: isSet(secFingerbank), AlertURL: isSet(secAlertURL),
+		DNSServerToken: isSet(secDNSToken),
+		SNMPCommunity:  isSet(secSNMP), FingerbankKey: isSet(secFingerbank), AlertURL: isSet(secAlertURL),
 	}
+	for i := 0; i < config.MaxProxmoxInstances; i++ {
+		f.ProxmoxTokens[i] = isSet(secProxmoxToken(i))
+		f.ProxmoxPasswords[i] = isSet(secProxmoxPassword(i))
+	}
+	return f
 }
 
 // applyEditable overlays the editable values onto a config.Config.
@@ -246,8 +286,13 @@ func applyEditable(c *config.Config, e Editable) {
 	c.UniFi.Site = e.UniFiSite
 	c.UniFi.VerifyTLS = e.UniFiVerifyTLS
 	c.Proxmox.Enabled = e.ProxmoxEnabled
-	c.Proxmox.BaseURL = e.ProxmoxBaseURL
-	c.Proxmox.VerifyTLS = e.ProxmoxVerifyTLS
+	c.Proxmox.Instances = e.ProxmoxInstances
+	// Back-compat: a settings doc saved before multi-instance carried a single
+	// base URL — fold it into instance 0.
+	if len(c.Proxmox.Instances) == 0 && e.ProxmoxBaseURL != "" {
+		c.Proxmox.Instances = []config.ProxmoxInstance{{BaseURL: e.ProxmoxBaseURL, VerifyTLS: e.ProxmoxVerifyTLS, AuthMode: "token"}}
+	}
+	c.Proxmox.Normalize()
 	c.Fingerbank.Enabled = e.FingerbankEnabled
 	if e.FingerbankMode != "" {
 		c.Fingerbank.Mode = e.FingerbankMode
@@ -301,8 +346,7 @@ func extractEditable(c config.Config) Editable {
 		UniFiSite:            c.UniFi.Site,
 		UniFiVerifyTLS:       c.UniFi.VerifyTLS,
 		ProxmoxEnabled:       c.Proxmox.Enabled,
-		ProxmoxBaseURL:       c.Proxmox.BaseURL,
-		ProxmoxVerifyTLS:     c.Proxmox.VerifyTLS,
+		ProxmoxInstances:     c.Proxmox.Instances,
 		FingerbankEnabled:    c.Fingerbank.Enabled,
 		FingerbankMode:       c.Fingerbank.Mode,
 		ActiveProbeEnabled:   c.ActiveProbe.Enabled,

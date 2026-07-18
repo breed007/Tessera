@@ -1263,12 +1263,14 @@ async function openSettings() {
   const pxInstances = e.proxmox_instances || [];
   const pxTokFlags = flags.proxmox_tokens_set || [];
   const pxPassFlags = flags.proxmox_passwords_set || [];
+  // Mirror app.go's per-instance collector naming so the status badge resolves.
+  const pxName = (i, inst) => (inst.name ? "proxmox:" + inst.name : i === 0 ? "proxmox" : "proxmox:" + (i + 1));
   const pxSlot = (i) => {
     const inst = pxInstances[i] || {};
     const mode = inst.auth_mode || "token";
     const hidden = i > 0 && !inst.base_url; // slot 0 always shown; extras revealed via "Add"
     return `<div class="px-inst" data-px="${i}" ${hidden ? 'style="display:none"' : ""}>
-      <div class="px-inst-head">Instance ${i + 1}${i === 0 ? " · primary" : ""} ${i === 0 ? statusBadge("proxmox") : statusBadge("proxmox:" + (inst.name || (i + 1)))}</div>
+      <div class="px-inst-head">Instance ${i + 1}${i === 0 ? " · primary" : ""} ${statusBadge(pxName(i, inst))}</div>
       ${txt(`set-px-name-${i}`, "Label (optional)", inst.name)}
       ${txt(`set-px-url-${i}`, "Base URL (https://proxmox.lan:8006)", inst.base_url)}
       ${chk(`set-px-verify-${i}`, "Verify TLS", inst.verify_tls)}

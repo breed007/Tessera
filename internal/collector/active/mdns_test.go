@@ -82,6 +82,19 @@ func TestParseMDNSResponse(t *testing.T) {
 	}
 }
 
+func TestMDNSFindingsHasService(t *testing.T) {
+	f := &mdnsFindings{services: []string{"_airplay", "_companion-link"}}
+	if !f.hasService("_googlecast", "_airplay") {
+		t.Error("expected _airplay to match")
+	}
+	if f.hasService("_googlecast", "_dial") {
+		t.Error("did not expect a Cast match")
+	}
+	if (&mdnsFindings{}).hasService("_airplay") {
+		t.Error("empty findings should match nothing")
+	}
+}
+
 func TestInstanceName(t *testing.T) {
 	cases := map[string]string{
 		"Living Room._airplay._tcp.local": "Living Room",

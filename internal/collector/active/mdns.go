@@ -68,6 +68,19 @@ type mdnsFindings struct {
 	name     string   // instance / host name
 }
 
+// hasService reports whether any of the given service labels (e.g. "_airplay")
+// were advertised — used to gate the follow-up media HTTP probes.
+func (f *mdnsFindings) hasService(labels ...string) bool {
+	for _, s := range f.services {
+		for _, want := range labels {
+			if s == want {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // queryMDNS sends one unicast mDNS query (all catalog questions, QU bit set) to
 // ip:5353 and parses whatever answers arrive within the timeout. Returns nil when
 // nothing usable came back. localIP, when valid, pins the source to the mgmt NIC.

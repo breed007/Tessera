@@ -381,23 +381,27 @@ func (p *Prober) probeHost(ctx context.Context, ip netip.Addr, sink *observation
 	// advertisements (Fire TV, Apple TV, Chromecast, Ring, Echo, printers, …) and
 	// self-reported model= — SPAN-free, the highest-signal identity for consumer
 	// gear. Routed through the same classifiers the passive sensor uses.
+	var mf *mdnsFindings
 	if p.mdnsOn && p.limiter.wait(ctx) == nil {
-		p.recordMDNS(ctx, sink, ipStr)
+		mf = p.recordMDNS(ctx, sink, ipStr)
 	}
 
 	// Media identity probes: AirPlay (:49152) and Google Cast (:8008) expose an
-	// exact model + name over unauthenticated HTTP — the strongest tell for TVs,
-	// streamers, HomePods, and Nest/Home devices.
-	if p.mediaOn {
-		p.recordMedia(ctx, sink, ipStr)
+	// exact model + name over unauthenticated HTTP. They're GATED to hosts the
+	// mDNS query already flagged as AirPlay/Cast devices — so we don't hit those
+	// ports on every host, only the handful worth the round-trip.
+	if p.mediaOn && mf != nil {
+		p.recordMedia(ctx, sink, ipStr, mf)
 	}
 }
 
-// recordMDNS runs one active mDNS query and emits device_class/os/model/hostname.
-func (p *Prober) recordMDNS(ctx context.Context, sink *observation.Sink, ipStr string) {
+// recordMDNS runs one active mDNS query, emits device_class/os/model/hostname,
+// and returns the findings (nil if the host answered nothing) so downstream
+// probes can gate on what was advertised.
+func (p *Prober) recordMDNS(ctx context.Context, sink *observation.Sink, ipStr string) *mdnsFindings {
 	f := queryMDNS(ctx, ipStr, p.mdnsTimeout, p.sourceIP)
 	if f == nil {
-		return
+		return nil
 	}
 	src := observation.SourceActiveMDNS
 	// Service types → device class / OS (e.g. _airplay → media / TV device).
@@ -429,11 +433,21 @@ func (p *Prober) recordMDNS(ctx context.Context, sink *observation.Sink, ipStr s
 	if f.name != "" {
 		p.record(ctx, sink, emit{src, observation.SubjectIPv4, ipStr, observation.AttrHostname, f.name, confMDNSHost})
 	}
+	return f
 }
 
-// recordMedia runs the AirPlay + Cast HTTP identity probes and emits their findings.
-func (p *Prober) recordMedia(ctx context.Context, sink *observation.Sink, ipStr string) {
-	for _, probe := range []func(context.Context, string, *http.Client) mediaFindings{probeAirPlay, probeGoogleCast} {
+// recordMedia runs the media HTTP identity probes that the host's mDNS
+// advertisement warrants: AirPlay (:49152) only when an Apple AirPlay/RAOP
+// service was seen, Google Cast (:8008) only when a Cast/DIAL service was seen.
+func (p *Prober) recordMedia(ctx context.Context, sink *observation.Sink, ipStr string, mf *mdnsFindings) {
+	var probes []func(context.Context, string, *http.Client) mediaFindings
+	if mf.hasService("_airplay", "_raop", "_airplay-p2p", "_appletv-v2") {
+		probes = append(probes, probeAirPlay)
+	}
+	if mf.hasService("_googlecast", "_dial", "_androidtvremote2") {
+		probes = append(probes, probeGoogleCast)
+	}
+	for _, probe := range probes {
 		if p.limiter.wait(ctx) != nil {
 			return
 		}

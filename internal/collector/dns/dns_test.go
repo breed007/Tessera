@@ -14,6 +14,7 @@ func TestParseHostsLine(t *testing.T) {
 		{"fqdn+alias", "10.0.0.5   printer.lan printer", true, "10.0.0.5", "printer.lan"},
 		{"tabs", "10.0.0.6\tswitch", true, "10.0.0.6", "switch"},
 		{"trailing comment", "10.0.0.7 apbeta # top of rack", true, "10.0.0.7", "apbeta"},
+		{"trailing dot stripped", "10.0.0.8 host.lan.", true, "10.0.0.8", "host.lan"},
 		{"ipv6", "fe80::1 router6", true, "fe80::1", "router6"},
 		{"whole-line comment", "# 10.0.0.8 ignored", false, "", ""},
 		{"blank", "   ", false, "", ""},
@@ -25,6 +26,39 @@ func TestParseHostsLine(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			r, ok := parseHostsLine(c.line)
+			if ok != c.wantOK {
+				t.Fatalf("ok = %v, want %v (line %q)", ok, c.wantOK, c.line)
+			}
+			if !ok {
+				return
+			}
+			if r.IP != c.wantIP || r.Name != c.wantName {
+				t.Fatalf("got {%q %q}, want {%q %q}", r.IP, r.Name, c.wantIP, c.wantName)
+			}
+		})
+	}
+}
+
+func TestParseUnboundLine(t *testing.T) {
+	cases := []struct {
+		name     string
+		line     string
+		wantOK   bool
+		wantIP   string
+		wantName string
+	}{
+		{"a record", `local-data: "nas.lan. IN A 10.0.0.10"`, true, "10.0.0.10", "nas.lan"},
+		{"a no-class", `  local-data: "printer.lan. A 10.0.0.11"`, true, "10.0.0.11", "printer.lan"},
+		{"aaaa", `local-data: "router6.lan. AAAA fd00::5"`, true, "fd00::5", "router6.lan"},
+		{"with ttl", `local-data: "host.lan. 3600 IN A 10.0.0.12"`, true, "10.0.0.12", "host.lan"},
+		{"ptr skipped", `local-data-ptr: "10.0.0.10 nas.lan"`, false, "", ""},
+		{"txt skipped", `local-data: "x.lan. IN TXT hello"`, false, "", ""},
+		{"not unbound", `10.0.0.10 nas.lan`, false, "", ""},
+		{"comment", `# local-data: "x.lan. A 1.2.3.4"`, false, "", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r, ok := parseUnboundLine(c.line)
 			if ok != c.wantOK {
 				t.Fatalf("ok = %v, want %v (line %q)", ok, c.wantOK, c.line)
 			}
@@ -57,6 +91,72 @@ func TestParseAdGuardRewrites(t *testing.T) {
 		"fe80::1":      "router6.lan",
 		"192.168.1.11": "spaced.lan",
 	}
+	assertRecords(t, got, want)
+}
+
+func TestParsePiholeHosts(t *testing.T) {
+	body := []byte(`{"config":{"dns":{"hosts":[
+		"10.0.0.20 nas.lan",
+		"10.0.0.21 printer.lan printer",
+		"127.0.0.1 localhost",
+		"garbage-line"
+	]}}}`)
+	got, err := parsePiholeHosts(body)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	assertRecords(t, got, map[string]string{
+		"10.0.0.20": "nas.lan",
+		"10.0.0.21": "printer.lan",
+	})
+}
+
+func TestParseTechnitium(t *testing.T) {
+	zones := []byte(`{"status":"ok","response":{"zones":[
+		{"name":"lan","internal":false},
+		{"name":"0.in-addr.arpa","internal":true}
+	]}}`)
+	zs, err := parseTechnitiumZones(zones)
+	if err != nil {
+		t.Fatalf("zones: %v", err)
+	}
+	if len(zs) != 1 || zs[0] != "lan" {
+		t.Fatalf("zones = %v, want [lan] (internal skipped)", zs)
+	}
+
+	recs := []byte(`{"response":{"records":[
+		{"name":"nas.lan","type":"A","rData":{"ipAddress":"10.0.0.30"}},
+		{"name":"router6.lan","type":"AAAA","rData":{"ipAddress":"fd00::9"}},
+		{"name":"lan","type":"SOA","rData":{}},
+		{"name":"www.lan","type":"CNAME","rData":{}}
+	]}}`)
+	got, err := parseTechnitiumRecords(recs)
+	if err != nil {
+		t.Fatalf("records: %v", err)
+	}
+	assertRecords(t, got, map[string]string{
+		"10.0.0.30": "nas.lan",
+		"fd00::9":   "router6.lan",
+	})
+}
+
+func TestParseTechnitiumZonesError(t *testing.T) {
+	if _, err := parseTechnitiumZones([]byte(`{"status":"error","errorMessage":"invalid token"}`)); err == nil {
+		t.Fatal("expected error on non-ok status")
+	}
+}
+
+func TestParseBadJSON(t *testing.T) {
+	if _, err := parseAdGuardRewrites([]byte("not json")); err == nil {
+		t.Fatal("expected error on bad AdGuard JSON")
+	}
+	if _, err := parsePiholeHosts([]byte("not json")); err == nil {
+		t.Fatal("expected error on bad Pi-hole JSON")
+	}
+}
+
+func assertRecords(t *testing.T, got []record, want map[string]string) {
+	t.Helper()
 	if len(got) != len(want) {
 		t.Fatalf("got %d records, want %d: %+v", len(got), len(want), got)
 	}
@@ -64,11 +164,5 @@ func TestParseAdGuardRewrites(t *testing.T) {
 		if want[r.IP] != r.Name {
 			t.Errorf("IP %s -> %q, want %q", r.IP, r.Name, want[r.IP])
 		}
-	}
-}
-
-func TestParseAdGuardRewritesBadJSON(t *testing.T) {
-	if _, err := parseAdGuardRewrites([]byte("not json")); err == nil {
-		t.Fatal("expected error on bad JSON")
 	}
 }

@@ -27,7 +27,7 @@ const (
 	secUniFiPass  = "secret.unifi_password"
 	secUniFiKey   = "secret.unifi_api_key"
 	secProxmox    = "secret.proxmox_token"
-	secAdGuard    = "secret.adguard_password"
+	secDNSToken   = "secret.dns_server_token"
 	secSNMP       = "secret.snmp_community"
 	secFingerbank = "secret.fingerbank_key"
 	secAlertURL   = "secret.alert_webhook_url"
@@ -65,25 +65,26 @@ type Editable struct {
 	DHCPEnabled    bool     `json:"dhcp_enabled"`
 	DHCPLeaseFiles []string `json:"dhcp_lease_files"`
 
-	// DNS records ingestion (hosts files + AdGuard Home).
-	DNSEnabled     bool     `json:"dns_enabled"`
-	DNSHostsFiles  []string `json:"dns_hosts_files"`
-	DNSAdGuardURL  string   `json:"dns_adguard_url"`
-	DNSAdGuardUser string   `json:"dns_adguard_user"`
+	// DNS records ingestion (local files + one DNS-server API).
+	DNSEnabled    bool     `json:"dns_enabled"`
+	DNSHostsFiles []string `json:"dns_hosts_files"`
+	DNSServerType string   `json:"dns_server_type"` // adguard | pihole | technitium
+	DNSServerURL  string   `json:"dns_server_url"`
+	DNSServerUser string   `json:"dns_server_user"`
 
 	// Auto-prune dormant devices (off by default; days default 30).
 	ForgetDormantEnabled bool `json:"forget_dormant_enabled"`
 	ForgetDormantDays    int  `json:"forget_dormant_days"`
 
 	// Alerts (the webhook URL itself is a secret; see SecretsInput.AlertURL).
-	AlertsEnabled   bool   `json:"alerts_enabled"`
-	AlertsKind      string `json:"alerts_kind"`
-	AlertNewDevice    bool `json:"alert_new_device"`
-	AlertOffline      bool `json:"alert_offline"`
-	AlertOnline       bool `json:"alert_online"`
-	AlertIPChanged    bool `json:"alert_ip_changed"`
-	AlertConflict     bool `json:"alert_conflict"`
-	AlertRiskyService bool `json:"alert_risky_service"`
+	AlertsEnabled     bool   `json:"alerts_enabled"`
+	AlertsKind        string `json:"alerts_kind"`
+	AlertNewDevice    bool   `json:"alert_new_device"`
+	AlertOffline      bool   `json:"alert_offline"`
+	AlertOnline       bool   `json:"alert_online"`
+	AlertIPChanged    bool   `json:"alert_ip_changed"`
+	AlertConflict     bool   `json:"alert_conflict"`
+	AlertRiskyService bool   `json:"alert_risky_service"`
 
 	// Discovery techniques (per-protocol toggles; all default on). Passive_*
 	// apply when the sensor is enabled; the rest when the active prober is.
@@ -106,26 +107,26 @@ type Editable struct {
 // SecretsInput carries secret values from the UI. An empty field means "leave
 // unchanged"; a non-empty field replaces the stored (encrypted) value.
 type SecretsInput struct {
-	UniFiUsername *string `json:"unifi_username,omitempty"`
-	UniFiPassword *string `json:"unifi_password,omitempty"`
-	UniFiAPIKey   *string `json:"unifi_api_key,omitempty"`
-	ProxmoxToken  *string `json:"proxmox_token,omitempty"`
-	AdGuardPass   *string `json:"adguard_password,omitempty"`
-	SNMPCommunity *string `json:"snmp_community,omitempty"`
-	FingerbankKey *string `json:"fingerbank_key,omitempty"`
-	AlertURL      *string `json:"alert_url,omitempty"`
+	UniFiUsername  *string `json:"unifi_username,omitempty"`
+	UniFiPassword  *string `json:"unifi_password,omitempty"`
+	UniFiAPIKey    *string `json:"unifi_api_key,omitempty"`
+	ProxmoxToken   *string `json:"proxmox_token,omitempty"`
+	DNSServerToken *string `json:"dns_server_token,omitempty"`
+	SNMPCommunity  *string `json:"snmp_community,omitempty"`
+	FingerbankKey  *string `json:"fingerbank_key,omitempty"`
+	AlertURL       *string `json:"alert_url,omitempty"`
 }
 
 // SecretFlags reports which secrets are currently set (without revealing them).
 type SecretFlags struct {
-	UniFiUsername bool `json:"unifi_username_set"`
-	UniFiPassword bool `json:"unifi_password_set"`
-	UniFiAPIKey   bool `json:"unifi_api_key_set"`
-	ProxmoxToken  bool `json:"proxmox_token_set"`
-	AdGuardPass   bool `json:"adguard_password_set"`
-	SNMPCommunity bool `json:"snmp_community_set"`
-	FingerbankKey bool `json:"fingerbank_key_set"`
-	AlertURL      bool `json:"alert_url_set"`
+	UniFiUsername  bool `json:"unifi_username_set"`
+	UniFiPassword  bool `json:"unifi_password_set"`
+	UniFiAPIKey    bool `json:"unifi_api_key_set"`
+	ProxmoxToken   bool `json:"proxmox_token_set"`
+	DNSServerToken bool `json:"dns_server_token_set"`
+	SNMPCommunity  bool `json:"snmp_community_set"`
+	FingerbankKey  bool `json:"fingerbank_key_set"`
+	AlertURL       bool `json:"alert_url_set"`
 }
 
 // Service reads/writes the editable settings, applying encryption for secrets.
@@ -155,7 +156,7 @@ func (s *Service) Effective(ctx context.Context, base config.Config) (config.Con
 	// Decrypt secret overrides (DB wins over env when set).
 	for key, dst := range map[string]*string{
 		secUniFiUser: &base.Secrets.UniFiUsername, secUniFiPass: &base.Secrets.UniFiPassword,
-		secUniFiKey: &base.Secrets.UniFiAPIKey, secProxmox: &base.Secrets.ProxmoxToken, secAdGuard: &base.Secrets.AdGuardPassword,
+		secUniFiKey: &base.Secrets.UniFiAPIKey, secProxmox: &base.Secrets.ProxmoxToken, secDNSToken: &base.Secrets.DNSServerToken,
 		secSNMP: &base.Secrets.SNMPCommunity, secFingerbank: &base.Secrets.FingerbankKey, secAlertURL: &base.Secrets.AlertWebhookURL,
 	} {
 		if v, ok, _ := s.store.SettingGet(ctx, key); ok && v != "" {
@@ -176,7 +177,7 @@ func (s *Service) Effective(ctx context.Context, base config.Config) (config.Con
 // master key (e.g. a backup restored onto a server with a different key).
 func (s *Service) DecryptFailures(ctx context.Context) int {
 	n := 0
-	for _, key := range []string{secUniFiUser, secUniFiPass, secUniFiKey, secProxmox, secAdGuard, secSNMP, secFingerbank, secAlertURL} {
+	for _, key := range []string{secUniFiUser, secUniFiPass, secUniFiKey, secProxmox, secDNSToken, secSNMP, secFingerbank, secAlertURL} {
 		if v, ok, _ := s.store.SettingGet(ctx, key); ok && v != "" {
 			if _, err := s.cipher.Open(v); err != nil {
 				n++
@@ -208,7 +209,7 @@ func (s *Service) SaveEditable(ctx context.Context, e Editable) error {
 func (s *Service) SaveSecrets(ctx context.Context, in SecretsInput) error {
 	for key, val := range map[string]*string{
 		secUniFiUser: in.UniFiUsername, secUniFiPass: in.UniFiPassword, secUniFiKey: in.UniFiAPIKey,
-		secProxmox: in.ProxmoxToken, secAdGuard: in.AdGuardPass,
+		secProxmox: in.ProxmoxToken, secDNSToken: in.DNSServerToken,
 		secSNMP: in.SNMPCommunity, secFingerbank: in.FingerbankKey, secAlertURL: in.AlertURL,
 	} {
 		if val == nil {
@@ -229,7 +230,7 @@ func (s *Service) secretFlags(ctx context.Context) SecretFlags {
 	isSet := func(k string) bool { v, ok, _ := s.store.SettingGet(ctx, k); return ok && v != "" }
 	return SecretFlags{
 		UniFiUsername: isSet(secUniFiUser), UniFiPassword: isSet(secUniFiPass), UniFiAPIKey: isSet(secUniFiKey),
-		ProxmoxToken:  isSet(secProxmox), AdGuardPass: isSet(secAdGuard),
+		ProxmoxToken: isSet(secProxmox), DNSServerToken: isSet(secDNSToken),
 		SNMPCommunity: isSet(secSNMP), FingerbankKey: isSet(secFingerbank), AlertURL: isSet(secAlertURL),
 	}
 }
@@ -263,8 +264,9 @@ func applyEditable(c *config.Config, e Editable) {
 	c.DHCP.LeaseFiles = e.DHCPLeaseFiles
 	c.DNS.Enabled = e.DNSEnabled
 	c.DNS.HostsFiles = e.DNSHostsFiles
-	c.DNS.AdGuardURL = e.DNSAdGuardURL
-	c.DNS.AdGuardUser = e.DNSAdGuardUser
+	c.DNS.ServerType = e.DNSServerType
+	c.DNS.ServerURL = e.DNSServerURL
+	c.DNS.ServerUser = e.DNSServerUser
 	c.Reconcile.ForgetDormantEnabled = e.ForgetDormantEnabled
 	if e.ForgetDormantDays > 0 {
 		c.Reconcile.ForgetDormantDays = e.ForgetDormantDays
@@ -320,10 +322,11 @@ func extractEditable(c config.Config) Editable {
 		DHCPEnabled:    c.DHCP.Enabled,
 		DHCPLeaseFiles: c.DHCP.LeaseFiles,
 
-		DNSEnabled:     c.DNS.Enabled,
-		DNSHostsFiles:  c.DNS.HostsFiles,
-		DNSAdGuardURL:  c.DNS.AdGuardURL,
-		DNSAdGuardUser: c.DNS.AdGuardUser,
+		DNSEnabled:    c.DNS.Enabled,
+		DNSHostsFiles: c.DNS.HostsFiles,
+		DNSServerType: c.DNS.ServerType,
+		DNSServerURL:  c.DNS.ServerURL,
+		DNSServerUser: c.DNS.ServerUser,
 
 		ForgetDormantEnabled: c.Reconcile.ForgetDormantEnabled,
 		ForgetDormantDays:    c.Reconcile.ForgetDormantDays,

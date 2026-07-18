@@ -129,18 +129,22 @@ dhcp:
   interval: 5m                         # re-read cadence
 
 dns:
-  # Ingest authoritative name<->IP records so devices get their real DNS names
-  # (and those names can win the hostname conflict against coarser sources via a
-  # "prefer dns for hostname" precedence rule). Two source types:
-  #   - hosts_files: hosts-format files readable on this host (Pi-hole
-  #     /etc/pihole/custom.list, dnsmasq/Unbound host files, /etc/hosts).
-  #   - AdGuard Home: pulls DNS rewrites (custom A records) over the REST API.
+  # Ingest authoritative name<->IP records from whatever local DNS you run, so
+  # devices get their real DNS names (which can win the hostname conflict via a
+  # "prefer dns for hostname" precedence rule). DNS-server-agnostic — two kinds:
+  #   - hosts_files: hosts-format OR Unbound local-data files readable on this
+  #     host (Pi-hole /etc/pihole/custom.list, dnsmasq addn-hosts, Unbound
+  #     configs, /etc/hosts). Covers dnsmasq, Unbound, and Pi-hole with no API.
+  #   - one DNS-server HTTP API, selected by server_type: adguard (rewrites),
+  #     pihole (v6 local DNS records), technitium (zone A/AAAA records).
   enabled: false
   hosts_files: []                      # e.g. ["/etc/pihole/custom.list", "/etc/hosts"]
-  adguard_url: ""                      # e.g. http://adguard.lan:3000  (blank = off)
-  adguard_user: ""                     # AdGuard web admin user (blank = no auth)
+  server_type: ""                      # "" | adguard | pihole | technitium  (blank = files only)
+  server_url: ""                       # e.g. http://adguard.lan:3000 / http://pi.hole / http://dns.lan:5380
+  server_user: ""                      # AdGuard basic-auth user (pihole/technitium ignore)
   interval: 5m                         # re-read cadence
-  # adguard password via env: TESSERA_ADGUARD_PASSWORD=...
+  # server token/password via env: TESSERA_DNS_SERVER_TOKEN=...
+  #   adguard = admin password · pihole = app password · technitium = API token
 
 reconcile:
   stale_after: 24h

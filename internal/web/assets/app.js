@@ -1345,12 +1345,19 @@ async function openSettings() {
 
     <div class="settings-section"><h3>DNS records ${statusBadge("dns")}</h3>
       ${chk("set-dns-en", "Ingest authoritative name↔IP records", e.dns_enabled)}
-      ${txt("set-dns-files", "Hosts-format file paths (comma-separated)", (e.dns_hosts_files || []).join(", "))}
-      <p class="muted-note">Hosts-format files readable on this host — Pi-hole <code>/etc/pihole/custom.list</code>, dnsmasq/Unbound host files, <code>/etc/hosts</code>. DNS names help name devices; if they disagree with UniFi/rDNS, resolve with a "prefer dns for hostname" precedence rule in Conflicts.</p>
-      ${txt("set-dns-ag-url", "AdGuard Home URL (optional)", e.dns_adguard_url)}
-      ${txt("set-dns-ag-user", "AdGuard user", e.dns_adguard_user)}
-      ${secField("set-dns-ag-pass", "AdGuard password", flags.adguard_password_set)}
-      <button class="btn" id="btn-test-dns">Test AdGuard</button><span class="test-result" id="tr-dns"></span>
+      <p class="muted-note">Names devices from your local DNS. Two source kinds — files and/or one DNS-server API. DNS names help name devices; if they disagree with UniFi/rDNS, add a "prefer dns for hostname" rule in Conflicts.</p>
+      ${txt("set-dns-files", "Local DNS file paths (comma-separated)", (e.dns_hosts_files || []).join(", "))}
+      <p class="muted-note">Hosts-format or Unbound files readable on this host — Pi-hole <code>/etc/pihole/custom.list</code>, dnsmasq addn-hosts, Unbound <code>local-data</code> configs, <code>/etc/hosts</code>. Covers dnsmasq, Unbound, and Pi-hole with no API.</p>
+      <div class="field"><label>DNS server API (optional)</label><select id="set-dns-type">
+        <option value="" ${!e.dns_server_type ? "selected" : ""}>— none (files only) —</option>
+        <option value="adguard" ${e.dns_server_type === "adguard" ? "selected" : ""}>AdGuard Home</option>
+        <option value="pihole" ${e.dns_server_type === "pihole" ? "selected" : ""}>Pi-hole (v6)</option>
+        <option value="technitium" ${e.dns_server_type === "technitium" ? "selected" : ""}>Technitium</option></select></div>
+      ${txt("set-dns-url", "Server URL", e.dns_server_url)}
+      ${txt("set-dns-user", "AdGuard user (AdGuard only)", e.dns_server_user)}
+      ${secField("set-dns-token", "Password / API token", flags.dns_server_token_set)}
+      <p class="muted-note">AdGuard: base URL + admin user/password (pulls DNS rewrites). Pi-hole v6: URL + app password (Settings → Web interface / API → app password). Technitium: URL (e.g. <code>http://dns.lan:5380</code>) + API token (pulls zone A/AAAA records).</p>
+      <button class="btn" id="btn-test-dns">Test server</button><span class="test-result" id="tr-dns"></span>
     </div>
 
     <div class="settings-section"><h3>Discovery &amp; scanning techniques</h3>
@@ -1497,7 +1504,7 @@ function wireSettings(canSec) {
     base_url: val("set-px-url"), verify_tls: checked("set-px-verify"), token: $("set-px-token").value,
   });
   if ($("btn-test-dns")) $("btn-test-dns").onclick = () => runTest("/api/test/dns", "tr-dns", {
-    url: val("set-dns-ag-url"), user: val("set-dns-ag-user"), password: $("set-dns-ag-pass").value,
+    type: val("set-dns-type"), url: val("set-dns-url"), user: val("set-dns-user"), token: $("set-dns-token").value,
   });
   $("btn-test-snmp").onclick = () => runTest("/api/test/snmp", "tr-snmp", { ip: val("set-snmp-ip"), community: splitList(val("set-snmp-comms"))[0] || "" });
   $("btn-test-fb").onclick = () => runTest("/api/test/fingerbank", "tr-fb", { key: $("set-fb-key").value });
@@ -1579,14 +1586,14 @@ function wireSettings(canSec) {
       forget_dormant_enabled: checked("set-prune-en"), forget_dormant_days: +val("set-prune-days") || 30,
       dhcp_enabled: checked("set-dhcp-en"), dhcp_lease_files: splitList(val("set-dhcp-files")),
       dns_enabled: checked("set-dns-en"), dns_hosts_files: splitList(val("set-dns-files")),
-      dns_adguard_url: val("set-dns-ag-url"), dns_adguard_user: val("set-dns-ag-user"),
+      dns_server_type: val("set-dns-type"), dns_server_url: val("set-dns-url"), dns_server_user: val("set-dns-user"),
     };
     const secrets = {};
     if (canSec) {
       const add = (k, id) => { const v = secInput(id); if (v !== undefined) secrets[k] = v; };
       add("unifi_username", "set-unifi-user"); add("unifi_password", "set-unifi-pass"); add("unifi_api_key", "set-unifi-key");
       add("proxmox_token", "set-px-token");
-      add("adguard_password", "set-dns-ag-pass");
+      add("dns_server_token", "set-dns-token");
       add("fingerbank_key", "set-fb-key"); add("alert_url", "set-al-url");
     }
     try { await api("PUT", "/api/settings", { editable, secrets }); toast("Saved — restart to apply"); openSettings(); }

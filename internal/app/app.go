@@ -253,13 +253,14 @@ func buildCollectors(cfg config.Config, st store.Store, log *slog.Logger) ([]col
 		log.Info("collector enabled", "name", d.Name(), "lease_files", len(cfg.DHCP.LeaseFiles))
 	}
 
-	if cfg.DNS.Enabled && (len(cfg.DNS.HostsFiles) > 0 || cfg.DNS.AdGuardURL != "") {
+	if cfg.DNS.Enabled && (len(cfg.DNS.HostsFiles) > 0 || cfg.DNS.ServerURL != "") {
 		d := dns.New(dns.Config{
-			HostsFiles: cfg.DNS.HostsFiles, AdGuardURL: cfg.DNS.AdGuardURL,
-			AdGuardUser: cfg.DNS.AdGuardUser, AdGuardPass: cfg.Secrets.AdGuardPassword, Interval: cfg.DNS.Interval,
+			HostsFiles: cfg.DNS.HostsFiles,
+			ServerType: cfg.DNS.ServerType, ServerURL: cfg.DNS.ServerURL,
+			ServerUser: cfg.DNS.ServerUser, ServerToken: cfg.Secrets.DNSServerToken, Interval: cfg.DNS.Interval,
 		})
 		cs = append(cs, d)
-		log.Info("collector enabled", "name", d.Name(), "hosts_files", len(cfg.DNS.HostsFiles), "adguard", cfg.DNS.AdGuardURL != "")
+		log.Info("collector enabled", "name", d.Name(), "hosts_files", len(cfg.DNS.HostsFiles), "server", cfg.DNS.ServerType)
 	}
 
 	if cfg.Proxmox.Enabled && cfg.Proxmox.BaseURL != "" {

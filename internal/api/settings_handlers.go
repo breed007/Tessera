@@ -211,22 +211,23 @@ func (s *Server) handleTestDNS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		URL      string `json:"url"`
-		User     string `json:"user"`
-		Password string `json:"password"`
+		Type  string `json:"type"`
+		URL   string `json:"url"`
+		User  string `json:"user"`
+		Token string `json:"token"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad JSON")
 		return
 	}
-	pass := req.Password
-	if pass == "" {
-		pass = s.cfg.Secrets.AdGuardPassword
+	tok := req.Token
+	if tok == "" {
+		tok = s.cfg.Secrets.DNSServerToken
 	}
 	ctx, cancel := contextWithTimeout(r, 15*time.Second)
 	defer cancel()
-	n, err := dns.TestAdGuard(ctx, dns.Config{AdGuardURL: req.URL, AdGuardUser: req.User, AdGuardPass: pass})
-	testResult(w, fmt.Sprintf("%d DNS rewrite(s)", n), err)
+	n, err := dns.TestServer(ctx, dns.Config{ServerType: req.Type, ServerURL: req.URL, ServerUser: req.User, ServerToken: tok})
+	testResult(w, fmt.Sprintf("%d DNS record(s)", n), err)
 }
 
 func (s *Server) handleTestFingerbank(w http.ResponseWriter, r *http.Request) {

@@ -67,12 +67,12 @@ type CaptureSource struct {
 
 // ActiveProbe configures the scoped, rate-limited prober (§4.2).
 type ActiveProbe struct {
-	Enabled   bool      `yaml:"enabled"`
-	Subnets   []string  `yaml:"subnets"`   // MUST be explicit; never unscoped
-	Interface string    `yaml:"interface"` // egress interface; empty → server's default-route interface
-	ICMP      bool      `yaml:"icmp"`
-	TCPPorts  []int     `yaml:"tcp_ports"`
-	UDPPorts  []int     `yaml:"udp_ports"` // scanned only when listed (no default UDP sweep)
+	Enabled   bool     `yaml:"enabled"`
+	Subnets   []string `yaml:"subnets"`   // MUST be explicit; never unscoped
+	Interface string   `yaml:"interface"` // egress interface; empty → server's default-route interface
+	ICMP      bool     `yaml:"icmp"`
+	TCPPorts  []int    `yaml:"tcp_ports"`
+	UDPPorts  []int    `yaml:"udp_ports"` // scanned only when listed (no default UDP sweep)
 	// SNMPCommunities are tried in order against each host (first that answers
 	// wins). Unlike the legacy single community (Secrets.SNMPCommunity, env-only),
 	// these are visible, editable, and multi-valued — SNMP community strings are
@@ -183,15 +183,18 @@ type Proxmox struct {
 	PollInterval time.Duration `yaml:"poll_interval"`
 }
 
-// DNS configures ingestion of authoritative name↔IP records: hosts-format files
-// (Pi-hole/dnsmasq/Unbound//etc/hosts) and AdGuard Home rewrites. Off by default.
-// The AdGuard password is a secret (env TESSERA_ADGUARD_PASSWORD).
+// DNS configures ingestion of authoritative name↔IP records from any local DNS:
+// hosts-format / Unbound files (Pi-hole custom.list, dnsmasq, Unbound, /etc/hosts)
+// and one optional DNS-server HTTP API (AdGuard Home / Pi-hole v6 / Technitium).
+// Off by default. The server token/password is a secret (env TESSERA_DNS_SERVER_TOKEN).
 type DNS struct {
-	Enabled     bool          `yaml:"enabled"`
-	HostsFiles  []string      `yaml:"hosts_files"`
-	AdGuardURL  string        `yaml:"adguard_url"`  // http://adguard.lan:3000
-	AdGuardUser string        `yaml:"adguard_user"` // web admin user
-	Interval    time.Duration `yaml:"interval"`
+	Enabled    bool     `yaml:"enabled"`
+	HostsFiles []string `yaml:"hosts_files"`
+	// HTTP-API server (blank type = files only).
+	ServerType string        `yaml:"server_type"` // adguard | pihole | technitium
+	ServerURL  string        `yaml:"server_url"`  // e.g. http://dns.lan:3000
+	ServerUser string        `yaml:"server_user"` // AdGuard basic-auth user (others ignore)
+	Interval   time.Duration `yaml:"interval"`
 }
 
 // DHCP configures ingestion of DHCP server lease tables (dnsmasq-family lease
@@ -215,7 +218,7 @@ type Secrets struct {
 	UniFiPassword   string
 	UniFiAPIKey     string
 	ProxmoxToken    string // Proxmox VE API token (user@realm!tokenid=secret)
-	AdGuardPassword string // AdGuard Home web admin password (DNS ingestion)
+	DNSServerToken  string // DNS-server API password/token (AdGuard/Pi-hole/Technitium)
 	FingerbankKey   string
 	SNMPCommunity   string
 	APIToken        string // optional bearer token for the HTTP API (§M8)
@@ -228,14 +231,14 @@ type Secrets struct {
 // The destination URL is a secret (Secrets.AlertWebhookURL); everything else is
 // plain config.
 type Alerts struct {
-	Enabled   bool   `yaml:"enabled"`
-	Kind      string `yaml:"kind"` // webhook | slack | discord | ntfy
-	NewDevice    bool `yaml:"new_device"`
-	Offline      bool `yaml:"offline"`
-	Online       bool `yaml:"online"`
-	IPChanged    bool `yaml:"ip_changed"`
-	Conflict     bool `yaml:"conflict"`
-	RiskyService bool `yaml:"risky_service"`
+	Enabled      bool   `yaml:"enabled"`
+	Kind         string `yaml:"kind"` // webhook | slack | discord | ntfy
+	NewDevice    bool   `yaml:"new_device"`
+	Offline      bool   `yaml:"offline"`
+	Online       bool   `yaml:"online"`
+	IPChanged    bool   `yaml:"ip_changed"`
+	Conflict     bool   `yaml:"conflict"`
+	RiskyService bool   `yaml:"risky_service"`
 }
 
 // Default returns a Config populated with the §5 defaults, before file/env

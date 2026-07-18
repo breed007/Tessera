@@ -146,6 +146,13 @@ type PrecedenceStore interface {
 	DeletePrecedence(ctx context.Context, attribute string) error
 }
 
+// EventStore persists the append-only change history (the Activity feed + the
+// incremental-sync cursor for API consumers).
+type EventStore interface {
+	AppendEvents(ctx context.Context, events []entity.Event) error
+	ListEvents(ctx context.Context, f entity.EventFilter) ([]entity.Event, error)
+}
+
 // Store is the full persistence surface handed to the app at startup.
 type Store interface {
 	ObservationLog
@@ -156,6 +163,7 @@ type Store interface {
 	AvailabilityStore
 	MergeStore
 	PrecedenceStore
+	EventStore
 	// Backup writes a consistent snapshot of the database to destPath.
 	Backup(ctx context.Context, destPath string) error
 	Migrate(ctx context.Context) error

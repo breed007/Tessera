@@ -86,7 +86,7 @@ function renderUserbar() {
   const link = (v, label) => `<a class="nav-link" data-view="${v}">${label}</a>`;
   const settings = me.is_admin ? link("settings", "Settings") : "";
   $("userbar").innerHTML =
-    `<nav class="nav">${link("dashboard", "Dashboard")}${link("topology", "Topology")}${link("ports", "Ports")}${link("observations", "Observations")}${link("security", "Security")}${settings}</nav>` +
+    `<nav class="nav">${link("dashboard", "Dashboard")}${link("activity", "Activity")}${link("topology", "Topology")}${link("ports", "Ports")}${link("observations", "Observations")}${link("security", "Security")}${settings}</nav>` +
     `<b>${esc(me.username)}</b><span class="role">${esc(me.role)}</span><a id="nav-logout">Logout</a>`;
   for (const a of document.querySelectorAll("#userbar .nav-link")) a.onclick = () => showView(a.dataset.view);
   $("nav-logout").onclick = async () => { await post("/api/logout"); location.reload(); };
@@ -139,6 +139,48 @@ function utilBars(subnets) {
       <span class="ubar-track"><span class="ubar-fill" style="width:${s.total ? pct : 0}%;background:${col}"></span></span>
       <span class="ubar-v">${s.total ? pct + "%" : "—"} <span class="muted-note">(${s.used}${s.total ? "/" + s.total : ""})</span></span></div>`;
   }).join("")}</div>`;
+}
+
+// ── activity feed (the "what changed" history) ───────────────────────────────
+const EVENT_KINDS = {
+  new_device:     { icon: "🆕", label: "New device" },
+  device_offline: { icon: "🔴", label: "Went offline" },
+  device_online:  { icon: "🟢", label: "Back online" },
+  ip_changed:     { icon: "🔀", label: "IP changed" },
+  conflict:       { icon: "⚠️", label: "Conflict" },
+  risky_service:  { icon: "🛡️", label: "Risky service" },
+};
+let activityKind = "";
+
+async function renderActivity() {
+  const body = $("activity-body");
+  const path = "/api/events?limit=300" + (activityKind ? "&kind=" + encodeURIComponent(activityKind) : "");
+  let data;
+  try { data = await getJSON(path); } catch (e) { body.innerHTML = `<p class="muted-note">Couldn't load activity: ${esc(e.message)}</p>`; return; }
+  const events = data.events || [];
+
+  const chip = (k, label) => `<button class="act-chip ${activityKind === k ? "on" : ""}" data-kind="${k}">${label}</button>`;
+  const filters = `<div class="act-filters">${chip("", "All")}${Object.entries(EVENT_KINDS).map(([k, m]) => chip(k, m.icon + " " + m.label)).join("")}</div>`;
+
+  const rows = events.length ? events.map((ev) => {
+    const m = EVENT_KINDS[ev.kind] || { icon: "•", label: ev.kind };
+    const delta = ev.old && ev.new ? ` <span class="mono">${esc(ev.old)}</span> → <span class="mono">${esc(ev.new)}</span>` : "";
+    return `<div class="act-row" data-host="${esc(ev.stable_id)}">
+      <span class="act-ico" title="${esc(m.label)}">${m.icon}</span>
+      <span class="act-msg">${esc(ev.message || m.label)}${delta}</span>
+      <span class="act-time" title="${esc(ev.at)}">${fmtTime(ev.at)}</span>
+    </div>`;
+  }).join("") : `<p class="muted-note">No changes recorded yet${activityKind ? " for this filter" : ""}. Tessera logs devices appearing, going offline, changing IP, and new conflicts/risky services as they happen.</p>`;
+
+  body.innerHTML = `<h2>Activity</h2>
+    <p class="muted-note">Everything that's changed on your network, newest first. This is also available over the API (<span class="mono">/api/events?since=&lt;cursor&gt;</span>) for incremental sync.</p>
+    ${filters}<div class="act-feed">${rows}</div>`;
+
+  for (const c of body.querySelectorAll(".act-chip")) c.onclick = () => { activityKind = c.dataset.kind; renderActivity(); };
+  for (const r of body.querySelectorAll(".act-row")) {
+    const id = r.dataset.host;
+    if (id) r.onclick = () => openHost(id);
+  }
 }
 
 async function renderTrends() {
@@ -1691,7 +1733,7 @@ $("detail-close").onclick = closePanels;
 $("overlay").onclick = closePanels;
 
 // ── full-page views (router) ─────────────────────────────────────────────────
-const VIEWS = ["dashboard", "topology", "ports", "observations", "security", "settings"];
+const VIEWS = ["dashboard", "activity", "topology", "ports", "observations", "security", "settings"];
 function showView(name) {
   if (!VIEWS.includes(name)) name = "dashboard";
   closePanels();
@@ -1704,6 +1746,7 @@ function showView(name) {
   else if (name === "observations") renderObservations(true);
   else if (name === "security") renderSecurity();
   else if (name === "ports") renderPortmap();
+  else if (name === "activity") renderActivity();
 }
 
 async function init() {

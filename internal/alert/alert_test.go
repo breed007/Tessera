@@ -14,14 +14,19 @@ import (
 )
 
 type fakeStore struct {
-	snap  entity.Snapshot
-	kv    map[string]string
-	supps []entity.SecuritySuppression
+	snap   entity.Snapshot
+	kv     map[string]string
+	supps  []entity.SecuritySuppression
+	events []entity.Event
 }
 
 func (f *fakeStore) LoadEntities(context.Context) (entity.Snapshot, error) { return f.snap, nil }
 func (f *fakeStore) ListSecuritySuppressions(context.Context) ([]entity.SecuritySuppression, error) {
 	return f.supps, nil
+}
+func (f *fakeStore) AppendEvents(_ context.Context, evs []entity.Event) error {
+	f.events = append(f.events, evs...)
+	return nil
 }
 func (f *fakeStore) SettingGet(_ context.Context, k string) (string, bool, error) {
 	v, ok := f.kv[k]
@@ -185,13 +190,49 @@ func TestEngineRiskyServiceSuppressionExpired(t *testing.T) {
 	}
 }
 
-func TestEngineDisabledNoop(t *testing.T) {
-	fs := &fakeStore{kv: map[string]string{}}
+// TestEngineDisabledStillTracksState: detection is always-on, so a disabled
+// engine still seeds/saves the baseline state (needed for the change history) —
+// it just never dispatches to a webhook. The no-dispatch guarantee is covered by
+// the URL-less config (no endpoint is ever contacted).
+func TestEngineDisabledStillTracksState(t *testing.T) {
+	fs := &fakeStore{kv: map[string]string{}, snap: entity.Snapshot{
+		Hosts: []entity.Host{{ID: 1, StableID: "mac:aa"}},
+	}}
 	e := New(fs, Config{Enabled: false}, nil)
 	if err := e.Process(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := fs.kv[stateKey]; ok {
-		t.Error("disabled engine should not touch state")
+	if _, ok := fs.kv[stateKey]; !ok {
+		t.Error("always-on detection should seed baseline state even when alerting is disabled")
+	}
+}
+
+// TestEventHistoryPersistsWhenAlertingDisabled proves detection is always-on: a
+// new device is recorded to the change history even with webhook alerting off.
+func TestEventHistoryPersistsWhenAlertingDisabled(t *testing.T) {
+	fs := &fakeStore{kv: map[string]string{}, snap: entity.Snapshot{
+		Hosts: []entity.Host{{ID: 1, StableID: "mac:aa", DisplayName: "known"}},
+	}}
+	// Alerting explicitly OFF (no URL, Enabled false).
+	e := New(fs, Config{Enabled: false}, nil)
+
+	// First run seeds a silent baseline — no events.
+	if err := e.Process(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(fs.events) != 0 {
+		t.Fatalf("first run should seed silently, got %d events", len(fs.events))
+	}
+
+	// A brand-new device appears.
+	fs.snap.Hosts = append(fs.snap.Hosts, entity.Host{ID: 2, StableID: "mac:bb", DisplayName: "newbie"})
+	if err := e.Process(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(fs.events) != 1 {
+		t.Fatalf("expected 1 recorded event with alerting off, got %d", len(fs.events))
+	}
+	if fs.events[0].Kind != TypeNewDevice || fs.events[0].StableID != "mac:bb" {
+		t.Fatalf("unexpected event: %+v", fs.events[0])
 	}
 }

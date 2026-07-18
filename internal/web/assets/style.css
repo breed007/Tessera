@@ -110,6 +110,16 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 .cf-side b { color: var(--accent); }
 .cf-sides .vs { color: var(--faint); text-align: center; font-size: 11px; }
 .cf-card.prec-add { border-style: dashed; }
+/* Activity feed */
+.act-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 14px; }
+.act-chip { background: var(--surface-raised); border: 1px solid var(--hairline); border-radius: 999px; color: var(--text-secondary); font-size: 12px; padding: 4px 11px; cursor: pointer; }
+.act-chip.on { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.act-feed { display: flex; flex-direction: column; }
+.act-row { display: flex; align-items: baseline; gap: 10px; padding: 8px 6px; border-bottom: 1px solid var(--hairline); cursor: pointer; font-size: 13px; }
+.act-row:hover { background: var(--surface-raised); }
+.act-ico { flex: 0 0 auto; }
+.act-msg { flex: 1 1 auto; }
+.act-time { flex: 0 0 auto; color: var(--faint); font-size: 12px; white-space: nowrap; }
 .prec-add-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .prec-add-row select, .prec-src-input { background: var(--bg); border: 1px solid var(--hairline); border-radius: 4px; color: var(--text); font-family: var(--mono); font-size: 12px; padding: 5px 7px; }
 .prec-src-input { width: 130px; }

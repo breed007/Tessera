@@ -1,8 +1,15 @@
-// Package alert turns reconciliation deltas into notifications. After each
-// rebuild it diffs the entity snapshot against the previously-seen state and, for
-// the events the operator enabled, dispatches a message to a webhook (generic
-// JSON, Slack, Discord, or ntfy). The very first run seeds a silent baseline so
-// existing devices don't all fire at once.
+// Package alert detects reconciliation deltas and does two things with them.
+// After each rebuild it diffs the entity snapshot against the previously-seen
+// state and, on a transition (not every cycle, so it can't flap):
+//
+//   - ALWAYS persists the change to the append-only event history (the Activity
+//     feed + the incremental-sync cursor for API consumers), independent of
+//     whether webhook alerting is configured; and
+//   - dispatches the operator-enabled subset to a webhook (generic JSON, Slack,
+//     Discord, or ntfy) when alerting is on.
+//
+// The very first run seeds a silent baseline so existing devices neither fire
+// alerts nor flood the history all at once.
 package alert
 
 import (
@@ -40,6 +47,8 @@ type Event struct {
 	Message string    `json:"message"`
 	Subject string    `json:"subject"`
 	At      time.Time `json:"at"`
+	Old     string    `json:"old,omitempty"` // prior value where meaningful (e.g. old IP)
+	New     string    `json:"new,omitempty"` // new value
 }
 
 // Config is the alerting configuration (assembled from settings + the secret URL).
@@ -79,6 +88,7 @@ type Store interface {
 	SettingGet(ctx context.Context, key string) (string, bool, error)
 	SettingSet(ctx context.Context, key, value string, isSecret bool) error
 	ListSecuritySuppressions(ctx context.Context) ([]entity.SecuritySuppression, error)
+	AppendEvents(ctx context.Context, events []entity.Event) error
 }
 
 // Engine diffs snapshots and dispatches alerts.
@@ -107,12 +117,11 @@ type state struct {
 	Risky     map[string]bool      `json:"risky"` // "<stable_id>\x1f<proto>/<port>" seen risky services
 }
 
-// Process diffs the current entity layer against the last-seen state and
-// dispatches enabled events. No-op when alerting is disabled or unconfigured.
+// Process diffs the current entity layer against the last-seen state, persists
+// every detected change to the event history, and dispatches the enabled subset
+// to the webhook when alerting is configured. Detection always runs so the
+// Activity feed works even with alerting off.
 func (e *Engine) Process(ctx context.Context) error {
-	if !e.cfg.Enabled || strings.TrimSpace(e.cfg.URL) == "" {
-		return nil
-	}
 	snap, err := e.store.LoadEntities(ctx)
 	if err != nil {
 		return err
@@ -184,16 +193,16 @@ func (e *Engine) Process(ctx context.Context) error {
 		switch {
 		case !known:
 			if !host.IsExpected && !host.Ignored {
-				events = append(events, Event{TypeNewDevice, "New device", fmt.Sprintf("🆕 New device: %s%s%s", name, ipSuffix(hs.IP), descSuffix(host)), host.StableID, host.FirstSeen})
+				events = append(events, Event{TypeNewDevice, "New device", fmt.Sprintf("🆕 New device: %s%s%s", name, ipSuffix(hs.IP), descSuffix(host)), host.StableID, host.FirstSeen, "", ""})
 			}
 		default:
 			if old.Online && !hs.Online {
-				events = append(events, Event{TypeOffline, "Device offline", fmt.Sprintf("🔴 Offline: %s%s", name, ipSuffix(old.IP)), host.StableID, time.Now()})
+				events = append(events, Event{TypeOffline, "Device offline", fmt.Sprintf("🔴 Offline: %s%s", name, ipSuffix(old.IP)), host.StableID, time.Now(), "online", "offline"})
 			} else if !old.Online && hs.Online {
-				events = append(events, Event{TypeOnline, "Device online", fmt.Sprintf("🟢 Back online: %s%s", name, ipSuffix(hs.IP)), host.StableID, time.Now()})
+				events = append(events, Event{TypeOnline, "Device online", fmt.Sprintf("🟢 Back online: %s%s", name, ipSuffix(hs.IP)), host.StableID, time.Now(), "offline", "online"})
 			}
 			if old.IP != "" && hs.IP != "" && old.IP != hs.IP {
-				events = append(events, Event{TypeIPChanged, "IP changed", fmt.Sprintf("🔀 %s: IP changed %s → %s", name, old.IP, hs.IP), host.StableID, time.Now()})
+				events = append(events, Event{TypeIPChanged, "IP changed", fmt.Sprintf("🔀 %s: IP changed %s → %s", name, old.IP, hs.IP), host.StableID, time.Now(), old.IP, hs.IP})
 			}
 		}
 	}
@@ -202,7 +211,7 @@ func (e *Engine) Process(ctx context.Context) error {
 		key := c.Subject + "\x1f" + c.Attribute
 		cur.Conflicts[key] = true
 		if !firstRun && !prev.Conflicts[key] {
-			events = append(events, Event{TypeConflict, "Conflict", fmt.Sprintf("⚠️ Conflict on %s · %s: %q vs %q", c.Subject, c.Attribute, c.ValueA, c.ValueB), c.Subject, time.Now()})
+			events = append(events, Event{TypeConflict, "Conflict", fmt.Sprintf("⚠️ Conflict on %s · %s: %q vs %q", c.Subject, c.Attribute, c.ValueA, c.ValueB), c.Subject, time.Now(), c.ValueA, c.ValueB})
 		}
 	}
 
@@ -233,23 +242,35 @@ func (e *Engine) Process(ctx context.Context) error {
 				ip = a.ip
 			}
 			events = append(events, Event{TypeRiskyService, "Risky service",
-				fmt.Sprintf("🛡️ %s on %s%s: %s/%d — %s", risk.Severity, name, ipSuffix(ip), sv.Proto, sv.Port, risk.Why), host.StableID, time.Now()})
+				fmt.Sprintf("🛡️ %s on %s%s: %s/%d — %s", risk.Severity, name, ipSuffix(ip), sv.Proto, sv.Port, risk.Why), host.StableID, time.Now(), "", fmt.Sprintf("%s/%d", sv.Proto, sv.Port)})
 		}
 	}
 
-	if !firstRun {
+	if !firstRun && len(events) > 0 {
 		// Deterministic order so a burst reads sensibly.
 		sort.SliceStable(events, func(i, j int) bool { return events[i].Type < events[j].Type })
-		for _, ev := range events {
-			if !e.cfg.wants(ev.Type) {
-				continue
-			}
-			if err := Notify(ctx, e.httpc, e.cfg.Kind, e.cfg.URL, ev); err != nil {
-				e.log.Warn("alert dispatch failed", "type", ev.Type, "err", err)
-			}
+
+		// Always record the change history (Activity feed + consumer sync), even
+		// when webhook alerting is off.
+		if err := e.store.AppendEvents(ctx, toEntityEvents(events)); err != nil {
+			e.log.Warn("event history persist failed", "err", err)
 		}
-		if len(events) > 0 {
-			e.log.Info("alerts dispatched", "count", len(events))
+
+		// Dispatch the enabled subset to the webhook, when configured.
+		if e.cfg.Enabled && strings.TrimSpace(e.cfg.URL) != "" {
+			dispatched := 0
+			for _, ev := range events {
+				if !e.cfg.wants(ev.Type) {
+					continue
+				}
+				if err := Notify(ctx, e.httpc, e.cfg.Kind, e.cfg.URL, ev); err != nil {
+					e.log.Warn("alert dispatch failed", "type", ev.Type, "err", err)
+				}
+				dispatched++
+			}
+			if dispatched > 0 {
+				e.log.Info("alerts dispatched", "count", dispatched)
+			}
 		}
 	}
 	return e.saveState(ctx, cur)
@@ -286,6 +307,15 @@ func (e *Engine) saveState(ctx context.Context, s state) error {
 		return err
 	}
 	return e.store.SettingSet(ctx, stateKey, string(b), false)
+}
+
+// toEntityEvents maps detected alert events to the persisted change-history shape.
+func toEntityEvents(evs []Event) []entity.Event {
+	out := make([]entity.Event, 0, len(evs))
+	for _, e := range evs {
+		out = append(out, entity.Event{At: e.At, Kind: e.Type, StableID: e.Subject, Message: e.Message, Old: e.Old, New: e.New})
+	}
+	return out
 }
 
 func ipSuffix(ip string) string {

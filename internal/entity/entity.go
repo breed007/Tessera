@@ -184,6 +184,29 @@ type AvailabilityEvent struct {
 	At       time.Time `json:"at"`
 }
 
+// Event is one persisted change in the network — the append-only "what changed"
+// history that powers the Activity feed and lets API consumers sync
+// incrementally by cursor. Written by the reconcile-delta detector (transition-
+// based, so it doesn't flap), independent of whether webhook alerting is on.
+type Event struct {
+	ID       int64     `json:"id"`
+	At       time.Time `json:"at"`
+	Kind     string    `json:"kind"`     // new_device|device_offline|device_online|ip_changed|conflict|risky_service
+	StableID string    `json:"stable_id"` // the host (or conflict subject) the change is about
+	Message  string    `json:"message"`  // human-readable summary
+	Old      string    `json:"old,omitempty"`
+	New      string    `json:"new,omitempty"`
+}
+
+// EventFilter selects events for ListEvents. SinceID returns only events with a
+// higher id (the incremental-sync cursor); Kinds, when non-empty, restricts to
+// those kinds; Limit caps the result (newest first when SinceID is zero).
+type EventFilter struct {
+	SinceID int64
+	Kinds   []string
+	Limit   int
+}
+
 // Snapshot is the full reconciled entity layer at a point in time. The
 // reconciler rebuilds it from the log and the store persists it atomically
 // (Reset + insert), which is exactly the §3.3 "reconstructable by replaying the

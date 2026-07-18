@@ -168,3 +168,41 @@ func TestProxmoxNormalizeCapAndDefault(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateDNSServerHalfConfigured(t *testing.T) {
+	base := func() Config {
+		c := Default()
+		c.Storage.Driver, c.Storage.DSN = "sqlite", "x.db"
+		c.DNS.Enabled = true
+		return c
+	}
+	// URL without a type → error.
+	c := base()
+	c.DNS.ServerURL = "http://dns.lan:3000"
+	if err := c.Validate(); err == nil {
+		t.Error("expected error for server_url without server_type")
+	}
+	// Type without a URL → error.
+	c = base()
+	c.DNS.ServerType = "adguard"
+	if err := c.Validate(); err == nil {
+		t.Error("expected error for server_type without server_url")
+	}
+	// Both set → ok.
+	c = base()
+	c.DNS.ServerType, c.DNS.ServerURL = "adguard", "http://dns.lan:3000"
+	if err := c.Validate(); err != nil {
+		t.Errorf("both set should validate: %v", err)
+	}
+	// Neither set (files-only) → ok.
+	c = base()
+	if err := c.Validate(); err != nil {
+		t.Errorf("files-only DNS should validate: %v", err)
+	}
+	// Bogus type → error.
+	c = base()
+	c.DNS.ServerType, c.DNS.ServerURL = "bind9", "http://dns.lan"
+	if err := c.Validate(); err == nil {
+		t.Error("expected error for unknown server_type")
+	}
+}

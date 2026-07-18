@@ -274,17 +274,18 @@ func buildCollectors(cfg config.Config, st store.Store, log *slog.Logger) ([]col
 			} else {
 				auth.Token = cfg.Secrets.ProxmoxTokens[i]
 			}
+			// Health name is index-based so it's ALWAYS unique — user labels can
+			// collide (two "prod" instances) and must not merge two pollers into
+			// one status badge. The label is display-only (shown in the UI header).
 			name := "proxmox"
-			if inst.Name != "" {
-				name = "proxmox:" + inst.Name
-			} else if i > 0 {
+			if i > 0 {
 				name = fmt.Sprintf("proxmox:%d", i+1)
 			}
 			px := proxmox.NewPoller(name, proxmox.Config{
 				BaseURL: inst.BaseURL, VerifyTLS: inst.VerifyTLS, Auth: auth,
 			}, cfg.Proxmox.PollInterval, log)
 			cs = append(cs, px)
-			log.Info("collector enabled", "name", px.Name(), "base_url", inst.BaseURL, "auth", inst.AuthMode)
+			log.Info("collector enabled", "name", px.Name(), "label", inst.Name, "base_url", inst.BaseURL, "auth", inst.AuthMode)
 		}
 	}
 

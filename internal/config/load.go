@@ -108,5 +108,16 @@ func (c Config) Validate() error {
 			return fmt.Errorf("config: sensor source kind %q must be 'interface' or 'span'", s.Kind)
 		}
 	}
+	if c.DNS.Enabled {
+		switch c.DNS.ServerType {
+		case "", "adguard", "pihole", "technitium":
+		default:
+			return fmt.Errorf("config: invalid dns.server_type %q (adguard|pihole|technitium)", c.DNS.ServerType)
+		}
+		if (c.DNS.ServerURL == "") != (c.DNS.ServerType == "") {
+			return fmt.Errorf("config: dns.server_url and dns.server_type must be set together " +
+				"(a URL needs a server type, and vice versa)")
+		}
+	}
 	return nil
 }

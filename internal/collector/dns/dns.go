@@ -101,7 +101,14 @@ func (c *Collector) runOnce(ctx context.Context, sink *observation.Sink) {
 		}
 		recs = append(recs, rs...)
 	}
-	if c.cfg.ServerType != "" && c.cfg.ServerURL != "" {
+	// Surface a half-configured server (URL without a type, or vice versa) rather
+	// than silently ingesting nothing from it.
+	switch {
+	case c.cfg.ServerURL != "" && c.cfg.ServerType == "":
+		firstErr = errOnce(firstErr, fmt.Errorf("server URL set but no server type selected (adguard/pihole/technitium)"))
+	case c.cfg.ServerType != "" && c.cfg.ServerURL == "":
+		firstErr = errOnce(firstErr, fmt.Errorf("server type %q set but no server URL", c.cfg.ServerType))
+	case c.cfg.ServerType != "" && c.cfg.ServerURL != "":
 		rs, err := c.serverRecords(ctx)
 		if err != nil {
 			firstErr = errOnce(firstErr, fmt.Errorf("%s: %w", c.cfg.ServerType, err))

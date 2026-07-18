@@ -1,6 +1,11 @@
 package dns
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	"github.com/tessera/tessera/internal/observation"
+)
 
 func TestParseHostsLine(t *testing.T) {
 	cases := []struct {
@@ -164,5 +169,28 @@ func assertRecords(t *testing.T, got []record, want map[string]string) {
 		if want[r.IP] != r.Name {
 			t.Errorf("IP %s -> %q, want %q", r.IP, r.Name, want[r.IP])
 		}
+	}
+}
+
+// nopAppender satisfies observation.Appender for driving runOnce in a test.
+type nopAppender struct{}
+
+func (nopAppender) Append(context.Context, observation.Observation) (int64, error) { return 1, nil }
+
+func TestRunOnceHalfConfiguredServerFails(t *testing.T) {
+	sink := observation.NewSink("dns-test", nopAppender{})
+	// A server URL with no type selected must surface as a failure, not a silent
+	// no-op (no hosts files either, so there's nothing else to succeed on).
+	c := New(Config{ServerURL: "http://dns.lan:3000"})
+	c.runOnce(context.Background(), sink)
+	if got := c.Status().State; got != "error" {
+		t.Fatalf("state = %q, want error for URL-without-type", got)
+	}
+
+	// The reverse: a type with no URL is also a misconfig.
+	c = New(Config{ServerType: ServerAdGuard})
+	c.runOnce(context.Background(), sink)
+	if got := c.Status().State; got != "error" {
+		t.Fatalf("state = %q, want error for type-without-URL", got)
 	}
 }

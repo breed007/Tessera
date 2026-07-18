@@ -1406,7 +1406,7 @@ async function openSettings() {
         ${chk("disc-a-arp", "ARP-table harvest <span class='th'>MAC↔IP</span>", e.disc_active_arp_table)}
         ${chk("disc-a-snmp", "SNMP <span class='th'>sysName/sysDescr</span>", e.disc_active_snmp)}
         ${chk("disc-a-mdns", "mDNS query <span class='th'>Fire TV · Apple TV · Cast · Ring — service types + model</span>", e.disc_active_mdns)}
-        ${chk("disc-a-media", "Media probes <span class='th'>AirPlay :49152 · Cast :8008 — exact model</span>", e.disc_active_media)}
+        ${chk("disc-a-media", "Media probes <span class='th'>AirPlay :49152 · Cast :8008 — exact model · needs mDNS query on</span>", e.disc_active_media)}
         ${chk("disc-a-tcpbeh", "TCP behavioral scan <span class='th'>OS / firewall fingerprint</span>", e.disc_tcp_behavioral)}
         ${chk("disc-a-wake", "Thorough Wake <span class='th'>extra pass for sleepy devices · slower</span>", e.disc_thorough_wake)}
       </div>
@@ -1610,10 +1610,19 @@ function wireSettings(canSec) {
       unifi_enabled: checked("set-unifi-en"), unifi_base_url: val("set-unifi-url"), unifi_path_prefix: val("set-unifi-prefix"),
       unifi_site: val("set-unifi-site"), unifi_verify_tls: checked("set-unifi-verify"),
       proxmox_enabled: checked("set-px-en"),
-      proxmox_instances: [0, 1, 2, 3, 4].map((i) => ({
-        name: val(`set-px-name-${i}`), base_url: val(`set-px-url-${i}`), verify_tls: checked(`set-px-verify-${i}`),
-        auth_mode: val(`set-px-auth-${i}`) || "token", username: val(`set-px-user-${i}`),
-      })).filter((x) => x.base_url),
+      // Positional: per-instance secrets are stored by SLOT index, and app.go
+      // reads Secrets[i] by instance index — so instance[i] MUST stay aligned to
+      // slot i. Never compact interior gaps (that would shift a later instance
+      // onto an earlier instance's stored token). Trim only trailing empties.
+      proxmox_instances: (() => {
+        const a = [0, 1, 2, 3, 4].map((i) => ({
+          name: val(`set-px-name-${i}`), base_url: val(`set-px-url-${i}`), verify_tls: checked(`set-px-verify-${i}`),
+          auth_mode: val(`set-px-auth-${i}`) || "token", username: val(`set-px-user-${i}`),
+        }));
+        let n = a.length;
+        while (n > 0 && !a[n - 1].base_url) n--;
+        return a.slice(0, n);
+      })(),
       fingerbank_enabled: checked("set-fb-en"), fingerbank_mode: $("set-fb-mode").value,
       active_probe_enabled: checked("set-ap-en"),
       active_probe_subnets: splitList(val("set-ap-subnets")),

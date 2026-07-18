@@ -84,7 +84,7 @@ $("setup-form").onsubmit = async (e) => {
 
 function renderUserbar() {
   const link = (v, label) => `<a class="nav-link" data-view="${v}">${label}</a>`;
-  const settings = me.is_admin ? link("settings", "Settings") : "";
+  const settings = me.is_admin ? link("system", "System") + link("settings", "Settings") : "";
   $("userbar").innerHTML =
     `<nav class="nav">${link("dashboard", "Dashboard")}${link("activity", "Activity")}${link("topology", "Topology")}${link("ports", "Ports")}${link("observations", "Observations")}${link("security", "Security")}${settings}</nav>` +
     `<button id="nav-search" class="nav-search" title="Search devices, subnets, services (⌘K or /)">🔍 <kbd>⌘K</kbd></button>` +
@@ -184,6 +184,58 @@ async function renderActivity() {
     const id = r.dataset.host;
     if (id) r.onclick = () => openHost(id);
   }
+}
+
+// ── system health ────────────────────────────────────────────────────────────
+function fmtBytes(n) {
+  if (!n) return "0 B";
+  const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return (i === 0 ? n : n.toFixed(1)) + " " + u[i];
+}
+function fmtUptime(s) {
+  s = Math.max(0, s | 0);
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+  if (d) return `${d}d ${h}h`;
+  if (h) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+async function renderSystem() {
+  const body = $("system-body");
+  let d;
+  try { d = await getJSON("/api/system"); } catch (e) { body.innerHTML = `<h2>System</h2><p class="muted-note">Couldn't load system info: ${esc(e.message)}</p>`; return; }
+  const tile = (label, val, warn) => `<div class="sys-tile ${warn ? "warn" : ""}"><div class="sys-val">${esc(String(val))}</div><div class="sys-lbl">${esc(label)}</div></div>`;
+
+  const badge = (st) => {
+    const cls = st.state === "ok" ? "ok" : st.state === "error" ? "err" : "idle";
+    const dot = st.state === "idle" ? "○" : "●";
+    return `<span class="status-badge ${cls}">${dot} ${esc(st.state)}</span>`;
+  };
+  const cols = (d.collectors || []).map((c) => `<tr>
+    <td class="mono">${esc(c.name)}</td><td>${badge(c)}</td>
+    <td>${c.last_run && !String(c.last_run).startsWith("0001") ? fmtTime(c.last_run) : "—"}</td>
+    <td class="muted-note">${esc(c.state === "error" ? (c.err || "error") : (c.detail || ""))}</td></tr>`).join("");
+
+  body.innerHTML = `<h2>System</h2>
+    <p class="muted-note">Is Tessera working? Collector health, data volume, and build — at a glance.</p>
+    <div class="sys-tiles">
+      ${tile("Uptime", fmtUptime(d.uptime_seconds))}
+      ${tile("Database", fmtBytes(d.db_size_bytes))}
+      ${tile("Observations", (d.observations_total || 0).toLocaleString())}
+      ${tile("Changes logged", (d.events_total || 0).toLocaleString())}
+      ${tile("Dropped (backpressure)", (d.dropped || 0).toLocaleString(), d.dropped > 0)}
+      ${tile("Hosts", d.hosts || 0)}
+      ${tile("Addresses", d.addresses || 0)}
+      ${tile("Services", d.services || 0)}
+      ${tile("Subnets", d.subnets || 0)}
+      ${tile("Conflicts", d.conflicts || 0, d.conflicts > 0)}
+    </div>
+    <h3>Collectors <span class="badge">${(d.collectors || []).length}</span></h3>
+    ${d.collectors && d.collectors.length
+      ? `<table class="obs"><thead><tr><th>Collector</th><th>State</th><th>Last run</th><th>Detail</th></tr></thead><tbody>${cols}</tbody></table>`
+      : `<p class="muted-note">No collectors enabled yet. Turn one on in <a href="#settings" class="link-in">Settings</a> — the UniFi poller, Proxmox, or the active prober are good first choices.</p>`}
+    ${d.dropped > 0 ? `<p class="muted-note warn-note">⚠ ${d.dropped.toLocaleString()} observation(s) were dropped under load — the passive sensor's SPAN feed is best-effort. If this keeps climbing, the host can't keep up with the mirror-port volume.</p>` : ""}
+    <p class="muted-note" style="margin-top:14px">Tessera ${esc(d.version)} · build ${esc(d.build)}</p>`;
 }
 
 async function renderTrends() {
@@ -737,7 +789,7 @@ function renderHosts(hosts) {
       <td>${expectedPill(h.is_expected)}</td>
       <td>${fmtTime(h.last_seen)}</td>
     </tr>`).join("")
-    : `<tr><td colspan="7" class="muted-note" style="padding:18px;text-align:center">${hostsData.length ? "No devices match the current filter." : "No devices discovered yet — once a collector sees traffic, devices land here."}</td></tr>`;
+    : `<tr><td colspan="7" class="muted-note" style="padding:18px;text-align:center">${hostsData.length ? "No devices match the current filter." : (me.is_admin ? `No devices discovered yet. Enable a collector in <a href="#settings" class="link-in">Settings</a> — the UniFi poller or Proxmox pull inventory instantly; the active prober sweeps a subnet you scope.` : "No devices discovered yet — once a collector sees traffic, devices land here.")}</td></tr>`;
   for (const tr of $("hosts-body").querySelectorAll("tr")) {
     tr.onclick = (e) => { if (!e.target.closest(".tag-chip") && !e.target.closest(".row-sel")) openHost(tr.dataset.id); };
   }
@@ -1736,7 +1788,7 @@ $("detail-close").onclick = closePanels;
 $("overlay").onclick = closePanels;
 
 // ── full-page views (router) ─────────────────────────────────────────────────
-const VIEWS = ["dashboard", "activity", "topology", "ports", "observations", "security", "settings"];
+const VIEWS = ["dashboard", "activity", "topology", "ports", "observations", "security", "system", "settings"];
 function showView(name) {
   if (!VIEWS.includes(name)) name = "dashboard";
   closePanels();
@@ -1750,6 +1802,7 @@ function showView(name) {
   else if (name === "security") renderSecurity();
   else if (name === "ports") renderPortmap();
   else if (name === "activity") renderActivity();
+  else if (name === "system") renderSystem();
 }
 
 // ── global search palette (Cmd/Ctrl-K, or "/") ───────────────────────────────

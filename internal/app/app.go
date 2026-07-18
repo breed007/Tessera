@@ -172,6 +172,7 @@ func New(ctx context.Context, fileCfg config.Config, log *slog.Logger) (*App, er
 			Reconcile:       func(ctx context.Context) error { _, e := a.recon.Rebuild(ctx); return e },
 			Rescan:          a.Rescan,
 			Statuses:        a.Statuses,
+			Dropped:         func() int64 { return a.obsBuf.Dropped() },
 			Version:         Version,
 			Build:           Build,
 			OnRestart:       a.requestRestart,

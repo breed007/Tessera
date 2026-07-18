@@ -45,6 +45,7 @@ type Options struct {
 	Reconcile       func(context.Context) error
 	Rescan          func(context.Context, []netip.Addr) error // on-demand active probe of explicit targets
 	Statuses        func() []collector.Status                 // collector connection health (UniFi, Fingerbank)
+	Dropped         func() int64                              // observations dropped under backpressure (SPAN overload)
 	Version         string                                    // marketing version (footer)
 	Build           string                                    // build stamp YYYY.MM.DD.HH.mm (footer)
 	OnRestart       func()                                    // triggers a graceful restart to apply settings
@@ -70,6 +71,8 @@ type Server struct {
 	reconcile     func(context.Context) error
 	rescan        func(context.Context, []netip.Addr) error
 	statuses      func() []collector.Status
+	dropped       func() int64
+	startedAt     time.Time
 	version       string
 	build         string
 	onRestart     func()
@@ -102,6 +105,8 @@ func New(opts Options) *Server {
 		reconcile:     opts.Reconcile,
 		rescan:        opts.Rescan,
 		statuses:      opts.Statuses,
+		dropped:       opts.Dropped,
+		startedAt:     time.Now(),
 		version:       opts.Version,
 		build:         opts.Build,
 		onRestart:     opts.OnRestart,
@@ -160,6 +165,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/observations", s.handleObservations)
 	mux.HandleFunc("GET /api/events", s.handleEvents)
 	mux.HandleFunc("GET /api/status", s.handleStatus)
+	mux.HandleFunc("GET /api/system", s.handleSystem)
 	mux.HandleFunc("GET /api/version", s.handleVersion)
 	mux.HandleFunc("GET /api/metrics", s.handleMetrics)
 	mux.HandleFunc("GET /api/trends", s.handleTrends)

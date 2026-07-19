@@ -257,6 +257,12 @@ func (s *Server) handleTestFingerbank(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := contextWithTimeout(r, 15*time.Second)
 	defer cancel()
+	// DNS pre-flight: if the host can't resolve the API name, say so plainly
+	// rather than surfacing Go's resolver-blaming lookup error.
+	if err := preflightResolve(ctx, fingerbank.APIHost); err != nil {
+		testResult(w, "", err)
+		return
+	}
 	testResult(w, "API key accepted", fingerbank.TestKey(ctx, req.Key))
 }
 

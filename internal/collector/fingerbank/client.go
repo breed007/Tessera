@@ -12,9 +12,13 @@ import (
 	"strings"
 )
 
+// APIHost is the hostname the API mode contacts — exported so a connection test
+// can DNS-preflight the exact name the client will resolve.
+const APIHost = "api.fingerbank.org"
+
 // defaultEndpoint is the verified Fingerbank interrogate endpoint (§7). IP Recon
 // uses POST with a JSON body and the key as a query parameter.
-const defaultEndpoint = "https://api.fingerbank.org/api/v2/combinations/interrogate"
+const defaultEndpoint = "https://" + APIHost + "/api/v2/combinations/interrogate"
 
 // errRateLimited signals an HTTP 429 (or treated-as-rate-limited 5xx) so the
 // governor can back off rather than the caller spin-retrying.

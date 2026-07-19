@@ -15,6 +15,13 @@ import (
 
 var iconIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,40}$`)
 
+// svgActiveContentRe catches the obvious script vectors in an uploaded SVG:
+// <script>, <foreignObject> (can host HTML/JS), javascript: URLs, and inline
+// on* event handlers. This is defense-in-depth and immediate operator feedback,
+// NOT the primary control — SVG can smuggle script past a regex (entities,
+// namespaces), so the real protection is the sandbox CSP on the served file.
+var svgActiveContentRe = regexp.MustCompile(`(?i)<\s*script\b|<\s*foreignobject\b|javascript:|\son\w+\s*=`)
+
 // iconDir is where custom (uploaded) icons live.
 func (s *Server) iconDir() string { return filepath.Join(s.dataDir, "icons") }
 
@@ -84,6 +91,10 @@ func (s *Server) handleUploadIcon(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "expected an SVG under 256 KB")
 		return
 	}
+	if svgActiveContentRe.MatchString(req.SVG) {
+		writeErr(w, http.StatusBadRequest, "the SVG contains scripts or event handlers — icons must be static shapes only")
+		return
+	}
 	if err := os.MkdirAll(s.iconDir(), 0o750); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -125,5 +136,12 @@ func (s *Server) handleCustomIcon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "image/svg+xml")
+	// A custom icon is operator-uploaded content served as an active format
+	// (SVG can carry <script>). The sandbox CSP makes the browser treat it as an
+	// opaque origin with scripts/plugins disabled, so even a script-laden SVG
+	// can't execute or reach Tessera's origin on direct navigation; nosniff stops
+	// content-type confusion. It still renders fine as an inline image / CSS mask.
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	http.ServeFile(w, r, path)
 }

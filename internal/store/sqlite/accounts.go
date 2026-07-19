@@ -131,6 +131,14 @@ func (s *Store) DeleteSession(ctx context.Context, token string) error {
 	return err
 }
 
+// DeleteSessionsForUser logs a user out everywhere — used when their role
+// changes or their account is removed, so revoked privilege stops immediately
+// instead of lingering until the session expires.
+func (s *Store) DeleteSessionsForUser(ctx context.Context, username string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE username = ?`, username)
+	return err
+}
+
 func (s *Store) PruneSessions(ctx context.Context, now time.Time) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at < ?`, ft(now))
 	return err

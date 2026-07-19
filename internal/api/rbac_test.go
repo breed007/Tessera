@@ -192,3 +192,87 @@ func TestCurationWritesAreAudited(t *testing.T) {
 		}
 	}
 }
+
+// TestSessionRevocation pins the two privilege-persistence bugs found in QA: a
+// session must reflect the user's CURRENT role, and must die with the account.
+// Before the fix, a demoted user kept admin for the 7-day session TTL — long
+// enough to mint a permanent admin API token — and a deleted user kept full
+// access just as long.
+func TestSessionRevocation(t *testing.T) {
+	ctx := context.Background()
+	st, err := sqlite.Open(filepath.Join(t.TempDir(), "sess.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	accounts := account.NewManager(st)
+	cipher, _ := secret.New(secret.GenerateKey())
+	srv := New(Options{
+		ListenAddr: "127.0.0.1:0", Token: testToken, Accounts: accounts,
+		Settings: settings.New(st, cipher), EffectiveConfig: config.Default(), Store: st,
+	})
+	ts := httptest.NewServer(srv.routes())
+	t.Cleanup(ts.Close)
+
+	// Two admins so guardLastAdmin doesn't block demoting/deleting the first.
+	if err := accounts.CreateUser(ctx, "seed", "temp", "temppass123", account.RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	if err := accounts.CreateUser(ctx, "seed", "admin2", "admin2pass1", account.RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	tempID := int64(0)
+	users, _ := accounts.ListUsers(ctx)
+	for _, u := range users {
+		if u.Username == "temp" {
+			tempID = u.ID
+		}
+	}
+
+	login := func() string {
+		tok, _, err := accounts.Login(ctx, "temp", "temppass123")
+		if err != nil {
+			t.Fatalf("login: %v", err)
+		}
+		return tok
+	}
+	get := func(cookie, path string) int {
+		req, _ := http.NewRequest(http.MethodGet, ts.URL+path, nil)
+		req.AddCookie(&http.Cookie{Name: "tessera_session", Value: cookie})
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	// Baseline: an admin session reaches settings.
+	sess := login()
+	if code := get(sess, "/api/settings"); code != 200 {
+		t.Fatalf("admin session → /api/settings %d, want 200", code)
+	}
+
+	// Demote admin → viewer. The SAME session must lose admin immediately.
+	if err := accounts.UpdateUser(ctx, "admin2", tempID, "temp", account.RoleViewer, ""); err != nil {
+		t.Fatalf("demote: %v", err)
+	}
+	if code := get(sess, "/api/settings"); code == 200 {
+		t.Error("demoted user's existing session still reaches /api/settings — privilege not revoked")
+	}
+
+	// Delete the account. Any session must be dead, not merely downgraded.
+	sess2 := login()
+	if err := accounts.DeleteUser(ctx, "admin2", tempID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if code := get(sess2, "/api/me"); code == 200 {
+		t.Error("deleted user's session still authenticates — account removal didn't end access")
+	}
+	if code := get(sess2, "/api/hosts"); code == 200 {
+		t.Error("deleted user can still read inventory")
+	}
+}

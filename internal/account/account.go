@@ -1,7 +1,9 @@
 // Package account provides multi-user accounts with roles and cookie sessions
-// (§M10). Two roles: admin (full control incl. settings + user management) and
-// viewer (read-only). Passwords are bcrypt-hashed; sessions are random tokens
-// stored server-side.
+// (§M10). Three roles: admin (full control incl. settings/credentials, users,
+// tokens, restore), operator (inventory curation only), and viewer (read-only).
+// Passwords are bcrypt-hashed; sessions are random tokens stored server-side and
+// re-validated against the live user on every request, so a role change or a
+// deletion takes effect immediately.
 package account
 
 import (
@@ -60,6 +62,7 @@ type Store interface {
 	CreateSession(ctx context.Context, token, username string, role Role, expires time.Time) error
 	Session(ctx context.Context, token string) (username string, role Role, ok bool, err error)
 	DeleteSession(ctx context.Context, token string) error
+	DeleteSessionsForUser(ctx context.Context, username string) error
 	PruneSessions(ctx context.Context, now time.Time) error
 
 	Audit(ctx context.Context, username, action, detail string) error
@@ -172,16 +175,27 @@ func (m *Manager) Login(ctx context.Context, username, password string) (string,
 	return token, u, nil
 }
 
-// Session resolves a cookie token to a username + role.
+// Session resolves a session token to its identity, re-validating against the
+// live user record on every call. The session row caches the role from login
+// time, so trusting it would mean a demoted user keeps their old privileges (and
+// a DELETED user keeps access) until the session expires — a week of privilege
+// that was supposed to be revoked. The current role always wins, and a session
+// whose user no longer exists is dead.
 func (m *Manager) Session(ctx context.Context, token string) (string, Role, bool) {
 	if token == "" {
 		return "", "", false
 	}
-	user, role, ok, err := m.store.Session(ctx, token)
+	user, _, ok, err := m.store.Session(ctx, token)
 	if err != nil || !ok {
 		return "", "", false
 	}
-	return user, role, true
+	u, found, err := m.store.UserByName(ctx, user)
+	if err != nil || !found {
+		// Account deleted (or renamed) — the session dies with it.
+		_ = m.store.DeleteSession(ctx, token)
+		return "", "", false
+	}
+	return u.Username, u.Role, true
 }
 
 func (m *Manager) Logout(ctx context.Context, token string) error {
@@ -242,6 +256,9 @@ func (m *Manager) UpdateUser(ctx context.Context, actor string, id int64, userna
 	if err := m.store.UpdateUser(ctx, u); err != nil {
 		return err
 	}
+	// Log the user out everywhere: a role change (or password reset) must take
+	// effect now, not whenever their current session happens to expire.
+	_ = m.store.DeleteSessionsForUser(ctx, u.Username)
 	_ = m.store.Audit(ctx, actor, "user.update", username)
 	return nil
 }
@@ -259,6 +276,7 @@ func (m *Manager) DeleteUser(ctx context.Context, actor string, id int64) error 
 	if err := m.store.DeleteUser(ctx, id); err != nil {
 		return err
 	}
+	_ = m.store.DeleteSessionsForUser(ctx, u.Username)
 	_ = m.store.Audit(ctx, actor, "user.delete", u.Username)
 	return nil
 }

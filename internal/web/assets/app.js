@@ -1169,7 +1169,9 @@ async function openConflicts() {
 }
 
 async function openHost(id) {
-  const d = await getJSON("/api/host?id=" + encodeURIComponent(id));
+  let d;
+  try { d = await getJSON("/api/host?id=" + encodeURIComponent(id)); }
+  catch { toast("That device is no longer here — it may have been forgotten or merged."); return; }
   const h = d.host;
   const isAdmin = me.is_admin;
   const xbtn = (attrs) => isAdmin ? `<button class="art-del" ${attrs} title="Delete this artifact (removes its stored observations)">✕</button>` : "";

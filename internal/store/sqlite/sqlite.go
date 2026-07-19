@@ -764,6 +764,9 @@ func (s *Store) ForgetSubjects(ctx context.Context, stableID string, subjects []
 		if _, err := tx.ExecContext(ctx, `DELETE FROM host_merges WHERE secondary=? OR primary_id=?`, stableID, stableID); err != nil {
 			return 0, fmt.Errorf("sqlite: forget merges: %w", err)
 		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM events WHERE stable_id=?`, stableID); err != nil {
+			return 0, fmt.Errorf("sqlite: forget events: %w", err)
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, err

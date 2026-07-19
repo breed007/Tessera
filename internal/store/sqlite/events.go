@@ -85,3 +85,25 @@ func (s *Store) ListEvents(ctx context.Context, f entity.EventFilter) ([]entity.
 	}
 	return out, rows.Err()
 }
+
+// CountEvents returns the number of rows in the change history.
+func (s *Store) CountEvents(ctx context.Context) (int64, error) {
+	var n int64
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM events`).Scan(&n)
+	return n, err
+}
+
+// PruneEvents keeps exactly the most recent `keep` events (by id) and deletes
+// the rest — a hard bound on the table for a long-running instance.
+func (s *Store) PruneEvents(ctx context.Context, keep int) (int64, error) {
+	if keep <= 0 {
+		return 0, nil
+	}
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM events WHERE id NOT IN (SELECT id FROM events ORDER BY id DESC LIMIT ?)`, keep)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}

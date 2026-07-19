@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/tessera/tessera/internal/collector"
-	"github.com/tessera/tessera/internal/entity"
 )
 
 // SystemInfo is the operator's at-a-glance health snapshot: collectors, data
@@ -59,9 +58,8 @@ func (s *Server) handleSystem(w http.ResponseWriter, r *http.Request) {
 		info.Subnets = len(snap.Subnets)
 		info.Conflicts = len(snap.Conflicts)
 	}
-	// A cheap total: the newest event id (events are append-only, ids monotonic).
-	if evs, err := s.store.ListEvents(ctx, entity.EventFilter{Limit: 1}); err == nil && len(evs) > 0 {
-		info.EventsTotal = int(evs[0].ID)
+	if n, err := s.store.CountEvents(ctx); err == nil {
+		info.EventsTotal = int(n)
 	}
 
 	writeJSON(w, http.StatusOK, info)

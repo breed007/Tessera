@@ -556,9 +556,20 @@ func (a *App) compactLoop(ctx context.Context, interval time.Duration) {
 			} else if n > 0 {
 				a.log.Info("log compacted", "rows_removed", n)
 			}
+			// Bound the change-history table the same way (keep the most recent N).
+			if n, err := a.store.PruneEvents(ctx, maxEvents); err != nil {
+				a.log.Error("event prune failed", "err", err)
+			} else if n > 0 {
+				a.log.Info("events pruned", "rows_removed", n)
+			}
 		}
 	}
 }
+
+// maxEvents caps the change-history table. Events are low-frequency (one row per
+// transition), so this holds a deep history while still bounding disk on an
+// instance that runs for years.
+const maxEvents = 20000
 
 // trackAvailability records an online/offline transition whenever a host's
 // reachability flips (online = at least one active address). Runs after every

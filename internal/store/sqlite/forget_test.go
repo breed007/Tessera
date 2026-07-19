@@ -42,6 +42,14 @@ func TestForgetSubjects(t *testing.T) {
 	if err := st.SetResolution(ctx, entity.ConflictResolution{Subject: "mac:" + mac, Attribute: "device_class", ResolvedAt: t0}); err != nil {
 		t.Fatal(err)
 	}
+	// Change-history events for this host (and one for another host that must survive).
+	if err := st.AppendEvents(ctx, []entity.Event{
+		{At: t0, Kind: "new_device", StableID: "mac:" + mac, Message: "new"},
+		{At: t0, Kind: "device_offline", StableID: "mac:" + mac, Message: "offline"},
+		{At: t0, Kind: "new_device", StableID: "mac:" + other, Message: "other"},
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	removed, err := st.ForgetSubjects(ctx, "mac:"+mac, []string{mac, ip})
 	if err != nil {
@@ -63,6 +71,54 @@ func TestForgetSubjects(t *testing.T) {
 	}
 	if rs, _ := st.ListResolutions(ctx); len(rs) != 0 {
 		t.Errorf("resolution should be cleared: %+v", rs)
+	}
+	// The forgotten host's change events are gone; the other host's survives.
+	evs, _ := st.ListEvents(ctx, entity.EventFilter{})
+	if len(evs) != 1 || evs[0].StableID != "mac:"+other {
+		t.Errorf("after forget, events = %+v, want only the other host's", evs)
+	}
+}
+
+func TestEventsPruneAndCount(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(filepath.Join(t.TempDir(), "ev.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t0 := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	batch := make([]entity.Event, 0, 50)
+	for i := 0; i < 50; i++ {
+		batch = append(batch, entity.Event{At: t0.Add(time.Duration(i) * time.Second), Kind: "new_device", StableID: "mac:x", Message: "e"})
+	}
+	if err := st.AppendEvents(ctx, batch); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := st.CountEvents(ctx); n != 50 {
+		t.Fatalf("count = %d, want 50", n)
+	}
+	// Keep the newest 10.
+	removed, err := st.PruneEvents(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed != 40 {
+		t.Errorf("pruned %d, want 40", removed)
+	}
+	if n, _ := st.CountEvents(ctx); n != 10 {
+		t.Errorf("after prune count = %d, want 10", n)
+	}
+	// The survivors are the newest ids (41..50).
+	kept, _ := st.ListEvents(ctx, entity.EventFilter{Limit: 100})
+	if len(kept) != 10 || kept[0].ID != 50 {
+		t.Errorf("kept newest? first id = %d, want 50; kept %d", kept[0].ID, len(kept))
+	}
+	// keep<=0 is a no-op.
+	if removed, _ := st.PruneEvents(ctx, 0); removed != 0 {
+		t.Errorf("prune(0) removed %d, want 0", removed)
 	}
 }
 

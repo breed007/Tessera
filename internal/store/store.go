@@ -151,6 +151,11 @@ type PrecedenceStore interface {
 type EventStore interface {
 	AppendEvents(ctx context.Context, events []entity.Event) error
 	ListEvents(ctx context.Context, f entity.EventFilter) ([]entity.Event, error)
+	// CountEvents returns the number of rows currently in the change history.
+	CountEvents(ctx context.Context) (int64, error)
+	// PruneEvents keeps the most recent `keep` events and deletes older rows,
+	// bounding the table on a long-running instance. keep<=0 is a no-op.
+	PruneEvents(ctx context.Context, keep int) (removed int64, err error)
 }
 
 // Store is the full persistence surface handed to the app at startup.

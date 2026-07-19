@@ -159,6 +159,10 @@ func (s *Server) handleTestUniFi(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := contextWithTimeout(r, 20*time.Second)
 	defer cancel()
+	if err := preflightURL(ctx, req.BaseURL); err != nil {
+		testResult(w, "", err)
+		return
+	}
 	n, err := unifi.Test(ctx, unifi.Config{
 		BaseURL: req.BaseURL, PathPrefix: req.PathPrefix, Site: req.Site, VerifyTLS: req.VerifyTLS,
 		Auth: unifi.Auth{Username: req.Username, Password: req.Password, APIKey: req.APIKey},
@@ -180,6 +184,10 @@ func (s *Server) handleTestSNMP(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := contextWithTimeout(r, 5*time.Second)
 	defer cancel()
+	if err := preflightHost(ctx, req.IP); err != nil {
+		testResult(w, "", err)
+		return
+	}
 	name, err := active.TestSNMP(ctx, req.IP, req.Community)
 	testResult(w, "sysName: "+name, err)
 }
@@ -216,6 +224,10 @@ func (s *Server) handleTestProxmox(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := contextWithTimeout(r, 20*time.Second)
 	defer cancel()
+	if err := preflightURL(ctx, req.BaseURL); err != nil {
+		testResult(w, "", err)
+		return
+	}
 	n, err := proxmox.Test(ctx, proxmox.Config{BaseURL: req.BaseURL, VerifyTLS: req.VerifyTLS, Auth: auth})
 	testResult(w, fmt.Sprintf("%d node(s)", n), err)
 }
@@ -240,6 +252,10 @@ func (s *Server) handleTestDNS(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := contextWithTimeout(r, 15*time.Second)
 	defer cancel()
+	if err := preflightURL(ctx, req.URL); err != nil {
+		testResult(w, "", err)
+		return
+	}
 	n, err := dns.TestServer(ctx, dns.Config{ServerType: req.Type, ServerURL: req.URL, ServerUser: req.User, ServerToken: tok})
 	testResult(w, fmt.Sprintf("%d DNS record(s)", n), err)
 }
@@ -303,6 +319,10 @@ func (s *Server) handleTestAlert(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := contextWithTimeout(r, 10*time.Second)
 	defer cancel()
+	if err := preflightURL(ctx, url); err != nil {
+		testResult(w, "", err)
+		return
+	}
 	ev := alert.Event{Type: "test", Title: "Test", Message: "✅ Tessera test alert — notifications are working.", At: time.Now()}
 	testResult(w, "sent", alert.Notify(ctx, nil, req.Kind, url, ev))
 }

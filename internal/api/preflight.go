@@ -4,10 +4,40 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"strings"
 	"time"
 )
+
+// preflightURL extracts the host from a (possibly scheme-less) URL and, when it's
+// a hostname (not an IP literal), checks it resolves. Empty/unparseable/IP hosts
+// are skipped so the real request surfaces its own error. Use before a test that
+// dials a user-supplied URL.
+func preflightURL(ctx context.Context, rawURL string) error {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return nil
+	}
+	if !strings.Contains(rawURL, "://") {
+		rawURL = "http://" + rawURL // tolerate a bare host[:port]
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil // let the real request report the malformed URL
+	}
+	return preflightHost(ctx, u.Hostname())
+}
+
+// preflightHost checks a bare host resolves, skipping empty values and IP
+// literals (which need no DNS).
+func preflightHost(ctx context.Context, host string) error {
+	host = strings.TrimSpace(host)
+	if host == "" || net.ParseIP(host) != nil {
+		return nil
+	}
+	return preflightResolve(ctx, host)
+}
 
 // preflightResolve checks that host resolves via the system resolver before a
 // connection test that depends on it. When DNS is the real problem, Go's raw

@@ -50,6 +50,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		"username":          p.username,
 		"role":              string(p.role),
 		"is_admin":          p.role == account.RoleAdmin,
+		"can_edit":          account.CanEdit(p.role), // admin or operator: may curate inventory
 		"can_store_secrets": s.settings.CanStoreSecrets(),
 		"tls":               s.tls.Enabled,
 	})

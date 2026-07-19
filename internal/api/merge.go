@@ -17,7 +17,7 @@ type mergeRequest struct {
 }
 
 func (s *Server) handleMergeHosts(w http.ResponseWriter, r *http.Request) {
-	who, ok := s.requireAdmin(w, r)
+	who, ok := s.requireOperator(w, r)
 	if !ok {
 		return
 	}
@@ -55,6 +55,7 @@ func (s *Server) handleMergeHosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.log.Info("hosts merged", "primary", req.Primary, "secondary", req.Secondary)
+	s.auditf(ctx, who, "host.merge", "%s into %s", req.Secondary, req.Primary)
 	s.reconcileNow(ctx)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
@@ -65,7 +66,8 @@ type unmergeRequest struct {
 }
 
 func (s *Server) handleUnmergeHost(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireAdmin(w, r); !ok {
+	who, ok := s.requireOperator(w, r)
+	if !ok {
 		return
 	}
 	var req unmergeRequest
@@ -77,6 +79,7 @@ func (s *Server) handleUnmergeHost(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.auditf(r.Context(), who, "host.unmerge", "%s", req.Secondary)
 	s.reconcileNow(r.Context())
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

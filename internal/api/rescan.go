@@ -45,7 +45,8 @@ type rescanSubnetRequest struct {
 }
 
 func (s *Server) handleRescanHost(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireAdmin(w, r); !ok {
+	who, ok := s.requireOperator(w, r)
+	if !ok {
 		return
 	}
 	if s.rescan == nil {
@@ -85,11 +86,13 @@ func (s *Server) handleRescanHost(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.auditf(ctx, who, "host.rescan", "%s (%d addresses)", req.StableID, len(targets))
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "probed": len(targets)})
 }
 
 func (s *Server) handleRescanSubnet(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireAdmin(w, r); !ok {
+	who, ok := s.requireOperator(w, r)
+	if !ok {
 		return
 	}
 	if s.rescan == nil {
@@ -131,6 +134,7 @@ func (s *Server) handleRescanSubnet(w http.ResponseWriter, r *http.Request) {
 			s.log.Warn("subnet rescan failed", "cidr", cidr, "err", err)
 		}
 	}()
+	s.auditf(r.Context(), who, "subnet.rescan", "%s (%d targets)", cidr, len(targets))
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"ok": true, "started": true, "cidr": cidr, "targets": len(targets), "skipped": skipped,
 	})

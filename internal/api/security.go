@@ -173,7 +173,7 @@ type suppressRequest struct {
 }
 
 func (s *Server) handleSuppressFinding(w http.ResponseWriter, r *http.Request) {
-	who, ok := s.requireAdmin(w, r)
+	who, ok := s.requireOperator(w, r)
 	if !ok {
 		return
 	}
@@ -217,11 +217,13 @@ func (s *Server) handleSuppressFinding(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.auditf(r.Context(), who, "security.suppress", "%s %s/%d", req.StableID, req.Proto, req.Port)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func (s *Server) handleUnsuppressFinding(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireAdmin(w, r); !ok {
+	who, ok := s.requireOperator(w, r)
+	if !ok {
 		return
 	}
 	var req suppressRequest
@@ -233,6 +235,7 @@ func (s *Server) handleUnsuppressFinding(w http.ResponseWriter, r *http.Request)
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.auditf(r.Context(), who, "security.unsuppress", "%s %s/%d", req.StableID, req.Proto, req.Port)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"crypto/subtle"
+	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -11,7 +12,8 @@ import (
 )
 
 // §M10 auth: a cookie session (from the login page) OR an admin bearer token
-// (for automation). Two roles — admin (everything) and viewer (read-only).
+// (for automation). Three roles — admin (everything, incl. settings/credentials,
+// users, tokens, restore), operator (inventory curation only), viewer (read-only).
 // Static UI assets are public (they hold no data); /api/* requires auth.
 
 const sessionCookie = "tessera_session"
@@ -96,7 +98,10 @@ func (s *Server) authGate(next http.Handler) http.Handler {
 	})
 }
 
-// requireAdmin writes 403 and returns false if the caller isn't an admin.
+// requireAdmin writes 403 and returns false if the caller isn't an admin. Use it
+// for anything touching credentials, accounts, or the instance itself: settings
+// (its connection tests send stored secrets to a supplied URL), users, API
+// tokens, backup/restore, restart, audit, system health.
 func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) (principal, bool) {
 	p, ok := principalFrom(r.Context())
 	if !ok || p.role != account.RoleAdmin {
@@ -104,6 +109,25 @@ func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) (principal
 		return principal{}, false
 	}
 	return p, true
+}
+
+// requireOperator writes 403 and returns false unless the caller may edit
+// inventory data (admin or operator). Use it for curation: annotate, tag,
+// create, merge, resolve conflicts, suppress findings, rescan, forget.
+func (s *Server) requireOperator(w http.ResponseWriter, r *http.Request) (principal, bool) {
+	p, ok := principalFrom(r.Context())
+	if !ok || !account.CanEdit(p.role) {
+		writeErr(w, http.StatusForbidden, "operator or admin role required")
+		return principal{}, false
+	}
+	return p, true
+}
+
+// auditf records a data-changing action against the audit log (best-effort — an
+// audit failure must never fail the operation). With more than one role able to
+// mutate inventory, "who forgot this device?" needs an answer.
+func (s *Server) auditf(ctx context.Context, who principal, action, format string, args ...any) {
+	_ = s.accounts.Audit(ctx, who.username, action, fmt.Sprintf(format, args...))
 }
 
 func ctEqual(got, want string) bool {

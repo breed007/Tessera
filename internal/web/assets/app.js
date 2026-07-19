@@ -350,15 +350,15 @@ async function openServices() {
 
 function renderSubnets(rows) {
   const cols = ["CIDR", "VLAN", "Name", "Gateway", "Source"];
-  if (me.is_admin) cols.push("");
+  if (me.can_edit) cols.push("");
   $("detail-body").innerHTML = `<h2>Subnets <span class="badge">${rows.length}</span></h2>
     <p class="muted-note">Click a subnet to see its address map and utilization.</p>
-    ${me.is_admin ? `<div class="detail-actions"><button class="ghost" id="add-subnet-btn">+ Add subnet</button></div>` : ""}
+    ${me.can_edit ? `<div class="detail-actions"><button class="ghost" id="add-subnet-btn">+ Add subnet</button></div>` : ""}
     <table class="obs"><thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead>
     <tbody>${rows.map((s) => `<tr class="subnet-row" data-id="${s.id}">
       <td class="mono">${esc(s.cidr)}</td><td>${s.vlan_id ?? "—"}</td><td>${esc(s.name || "—")}</td>
       <td class="mono">${esc(s.gateway || "—")}</td><td>${esc(s.source)}</td>
-      ${me.is_admin ? `<td><button class="ghost rescan-subnet" data-id="${s.id}" data-cidr="${esc(s.cidr)}" title="Actively probe every address in this subnet">↻ Rescan</button></td>` : ""}
+      ${me.can_edit ? `<td><button class="ghost rescan-subnet" data-id="${s.id}" data-cidr="${esc(s.cidr)}" title="Actively probe every address in this subnet">↻ Rescan</button></td>` : ""}
     </tr>`).join("")}</tbody></table>`;
   if ($("add-subnet-btn")) $("add-subnet-btn").onclick = openCreateSubnet;
   for (const tr of $("detail-body").querySelectorAll(".subnet-row")) {
@@ -580,7 +580,7 @@ async function renderSecurity() {
   const d = await getJSON("/api/security");
   const findings = d.findings || [];
   const suppressed = d.suppressed || [];
-  const isAdmin = me && me.is_admin;
+  const isAdmin = me && me.can_edit;
   const counts = `<div class="sec-counts">
     <span class="sev-pill high">${d.high} high</span>
     <span class="sev-pill medium">${d.medium} medium</span>
@@ -777,7 +777,7 @@ function renderHosts(hosts) {
       return av < bv ? -d : av > bv ? d : 0;
     });
   }
-  const isAdmin = me && me.is_admin;
+  const isAdmin = me && me.can_edit;
   const visibleIDs = rows.map((h) => h.stable_id);
   $("hosts-body").innerHTML = rows.length ? rows.map((h) => `
     <tr data-id="${esc(h.stable_id)}">
@@ -839,7 +839,7 @@ function renderBulkBar() {
     <button class="ghost" data-bulk="ignored">⊘ Ignore</button>
     <button class="ghost" data-bulk="new">↩ New</button>
     <button class="ghost" data-bulk="add_tags">+ Tag…</button>
-    <button class="ghost danger" data-bulk="forget">⌫ Forget</button>
+    ${me.is_admin ? `<button class="ghost danger" data-bulk="forget">⌫ Forget</button>` : ""}
     <button class="ghost bulk-clear" id="bulk-clear">Clear</button>`;
   for (const b of bar.querySelectorAll("[data-bulk]")) b.onclick = () => bulkAction(b.dataset.bulk);
   $("bulk-clear").onclick = () => { selectedHosts.clear(); renderHosts(); };
@@ -944,7 +944,7 @@ function renderDevices(hosts, openCount) {
     };
   }
 
-  if (me.is_admin && $("device-tabs") && !$("add-device-btn")) {
+  if (me.can_edit && $("device-tabs") && !$("add-device-btn")) {
     const b = document.createElement("button");
     b.id = "add-device-btn"; b.className = "ghost add-btn"; b.textContent = "+ Add device";
     b.onclick = openCreateHost;
@@ -952,7 +952,7 @@ function renderDevices(hosts, openCount) {
   }
   $("device-hint").textContent = DEVICE_HINTS[deviceTab];
   const list = groups[deviceTab] || [];
-  const admin = me.is_admin;
+  const admin = me.can_edit;
   // Per-category quick actions (move the tile to another category).
   const actions = (h) => {
     if (!admin) return "";
@@ -1062,7 +1062,7 @@ function openCreateSubnet() {
 async function openConflicts() {
   const data = await getJSON("/api/conflicts");
   const open = data.open || [], resolved = data.resolved || [];
-  const admin = me.is_admin;
+  const admin = me.can_edit;
 
   const side = (c, which) => {
     const val = which === "a" ? c.value_a : c.value_b;
@@ -1173,7 +1173,7 @@ async function openHost(id) {
   try { d = await getJSON("/api/host?id=" + encodeURIComponent(id)); }
   catch { toast("That device is no longer here — it may have been forgotten or merged."); return; }
   const h = d.host;
-  const isAdmin = me.is_admin;
+  const isAdmin = me.can_edit;
   const xbtn = (attrs) => isAdmin ? `<button class="art-del" ${attrs} title="Delete this artifact (removes its stored observations)">✕</button>` : "";
   const ipById = {};
   (d.addresses || []).forEach((a) => { ipById[a.id] = a.ip; });
@@ -1190,13 +1190,13 @@ async function openHost(id) {
       : `${lbl}: ${c.from ? esc(c.from) + " → " : ""}<b>${esc(c.to)}</b>`;
     return `<div class="change"><span class="change-time mono">${fmtTime(c.at)}</span> ${what}</div>`;
   }).join("");
-  const iconPicker = me.is_admin ? `
+  const iconPicker = me.can_edit ? `
     <h3>Icon</h3>
     <div class="icon-picker" id="icon-picker">
       <button class="icon-tile ${h.icon ? "" : "sel"}" data-icon="" title="Auto">A</button>
       ${(await loadIcons()).map((i) => `<button class="icon-tile ${h.icon === i.id ? "sel" : ""}" data-icon="${esc(i.id)}" title="${esc(i.id)}"><span class="ic" style="${iconStyle(i.url, "var(--text)")}"></span></button>`).join("")}
     </div>` : "";
-  const annotate = me.is_admin ? `
+  const annotate = me.can_edit ? `
     <h3>Annotate</h3>
     <form class="annotate" id="annotate-form">
       <label>Display name</label><input type="text" id="an-name" value="${esc(h.display_name || "")}">
@@ -1222,7 +1222,7 @@ async function openHost(id) {
       ${(av.events || []).length ? `<div class="avail-events">${av.events.map((e) => `<div class="change"><span class="change-time mono">${fmtTime(e.at)}</span> <span class="pill ${e.online ? "yes" : "no"}">${e.online ? "online" : "offline"}</span></div>`).join("")}</div>` : ""}
     </div>` : "";
 
-  const actions = me.is_admin ? `<div class="detail-actions"><button id="rescan-host" class="ghost" title="Actively probe this host's addresses now">↻ Rescan host</button><button id="forget-host" class="ghost danger" title="Delete all history and let it be rediscovered">⌫ Forget</button></div>` : "";
+  const actions = me.can_edit ? `<div class="detail-actions"><button id="rescan-host" class="ghost" title="Actively probe this host's addresses now">↻ Rescan host</button><button id="forget-host" class="ghost danger" title="Delete all history and let it be rediscovered">⌫ Forget</button></div>` : "";
 
   const otherHosts = (hostsData || []).filter((x) => x.stable_id !== h.stable_id)
     .map((x) => `<option value="${esc(x.stable_id)}">${esc(x.display_name || x.stable_id)}${(x.ips || [])[0] ? " · " + esc(x.ips[0]) : ""}</option>`).join("");
@@ -1273,7 +1273,7 @@ async function openHost(id) {
     b.onclick = () => { closePanels(); if (b.dataset.go === "conflicts") openConflicts(); else showView("security"); };
   }
 
-  if (me.is_admin) {
+  if (me.can_edit) {
     $("annotate-form").onsubmit = async (e) => {
       e.preventDefault();
       await post("/api/host/annotate", { stable_id: h.stable_id, display_name: $("an-name").value, device_class: $("an-class").value, model: $("an-model").value, notes: $("an-notes").value, is_expected: $("an-expected").checked, ignored: $("an-ignored").checked, tags: splitList($("an-tags").value) });
@@ -1537,7 +1537,7 @@ async function openSettings() {
       <div id="token-list">${(tokens || []).map(tokenRow).join("") || `<p class="muted-note">No tokens yet.</p>`}</div>
       <div class="field row" style="margin-top:10px">
         <input type="text" id="tok-name" placeholder="token name (e.g. cablemap)" style="flex:1">
-        <select id="tok-role"><option value="viewer">viewer (read-only)</option><option value="admin">admin</option></select>
+        <select id="tok-role"><option value="viewer">viewer (read-only — reporting)</option><option value="operator">operator (curate inventory)</option><option value="admin">admin</option></select>
         <button class="btn" id="btn-add-token">Create token</button>
       </div>
     </div>
@@ -1549,11 +1549,12 @@ async function openSettings() {
     </div>
 
     <div class="settings-section"><h3>Users</h3>
+      <p class="muted-note"><b>admin</b> — everything, including this Settings page (which holds your UniFi/Proxmox/DNS credentials), users, API tokens, backup &amp; restore. <b>operator</b> — curates the inventory (rename, tag, merge, resolve conflicts, suppress findings, rescan, forget a device) but never sees Settings or credentials. <b>viewer</b> — read-only, for dashboards and reporting tokens. Bulk Forget is admin-only.</p>
       <div id="user-list">${users.map(userRow).join("")}</div>
       <div class="field row" style="margin-top:10px">
         <input type="text" id="nu-name" placeholder="username" style="flex:1">
         <input type="password" id="nu-pass" placeholder="password (8+)" style="flex:1">
-        <select id="nu-role"><option value="viewer">viewer</option><option value="admin">admin</option></select>
+        <select id="nu-role"><option value="viewer">viewer (read-only)</option><option value="operator">operator (no settings/credentials)</option><option value="admin">admin</option></select>
         <button class="btn" id="btn-add-user">Add</button>
       </div>
     </div>

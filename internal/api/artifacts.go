@@ -28,7 +28,8 @@ type deleteArtifactRequest struct {
 }
 
 func (s *Server) handleDeleteArtifact(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireAdmin(w, r); !ok {
+	who, ok := s.requireOperator(w, r)
+	if !ok {
 		return
 	}
 	var req deleteArtifactRequest
@@ -104,6 +105,7 @@ func (s *Server) handleDeleteArtifact(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.log.Info("artifact deleted", "kind", req.Kind, "stable_id", req.StableID, "observations_removed", removed)
+	s.auditf(ctx, who, "host.delete_artifact", "%s kind=%s", req.StableID, req.Kind)
 	s.reconcileNow(ctx)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "observations_removed": removed})
 }

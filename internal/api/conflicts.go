@@ -24,7 +24,7 @@ type resolveConflictRequest struct {
 // annotation (so it wins reconciliation) and records the resolution, then
 // reconciles. Admin-only.
 func (s *Server) handleResolveConflict(w http.ResponseWriter, r *http.Request) {
-	who, ok := s.requireAdmin(w, r)
+	who, ok := s.requireOperator(w, r)
 	if !ok {
 		return
 	}
@@ -76,6 +76,7 @@ func (s *Server) handleResolveConflict(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	s.auditf(ctx, who, "conflict.resolve", "%s · %s → %q", req.Subject, req.Attribute, req.Value)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -94,7 +95,7 @@ type precedenceRequest struct {
 }
 
 func (s *Server) handleSetPrecedence(w http.ResponseWriter, r *http.Request) {
-	who, ok := s.requireAdmin(w, r)
+	who, ok := s.requireOperator(w, r)
 	if !ok {
 		return
 	}
@@ -120,12 +121,14 @@ func (s *Server) handleSetPrecedence(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.auditf(ctx, who, "conflict.precedence", "%s → %s", req.Attribute, req.Source)
 	s.reconcileNow(ctx)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func (s *Server) handleReopenConflict(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireAdmin(w, r); !ok {
+	who, ok := s.requireOperator(w, r)
+	if !ok {
 		return
 	}
 	var req reopenConflictRequest
@@ -137,5 +140,6 @@ func (s *Server) handleReopenConflict(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.auditf(r.Context(), who, "conflict.reopen", "%s · %s", req.Subject, req.Attribute)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

@@ -67,7 +67,7 @@ func (s *Server) handleListIcons(w http.ResponseWriter, r *http.Request) {
 
 // handleUploadIcon stores a custom SVG icon (admin). Body: {id, svg}.
 func (s *Server) handleUploadIcon(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireAdmin(w, r); !ok {
+	if _, ok := s.requireOperator(w, r); !ok {
 		return
 	}
 	var req struct{ ID, SVG string }
@@ -97,7 +97,7 @@ func (s *Server) handleUploadIcon(w http.ResponseWriter, r *http.Request) {
 
 // handleDeleteIcon removes a custom icon (admin). Bundled icons can't be deleted.
 func (s *Server) handleDeleteIcon(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireAdmin(w, r); !ok {
+	if _, ok := s.requireOperator(w, r); !ok {
 		return
 	}
 	id := r.PathValue("id")

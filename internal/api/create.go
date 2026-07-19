@@ -24,7 +24,8 @@ type createHostRequest struct {
 }
 
 func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireAdmin(w, r); !ok {
+	who, ok := s.requireOperator(w, r)
+	if !ok {
 		return
 	}
 	var req createHostRequest
@@ -77,6 +78,7 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 	if !rec(observation.AttrIsExpected, "true", manualConfidence) {
 		return
 	}
+	s.auditf(ctx, who, "host.create", "%s", req.MAC)
 	s.reconcileNow(ctx)
 	resp := map[string]any{"ok": true, "stable_id": "mac:" + mac}
 	if warning != "" {
@@ -115,7 +117,8 @@ type createSubnetRequest struct {
 }
 
 func (s *Server) handleCreateSubnet(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireAdmin(w, r); !ok {
+	who, ok := s.requireOperator(w, r)
+	if !ok {
 		return
 	}
 	var req createSubnetRequest
@@ -138,6 +141,7 @@ func (s *Server) handleCreateSubnet(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.auditf(r.Context(), who, "subnet.create", "%s", ipnet.String())
 	s.reconcileNow(r.Context())
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "cidr": ipnet.String()})
 }

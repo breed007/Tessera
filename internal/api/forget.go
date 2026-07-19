@@ -17,7 +17,8 @@ type forgetRequest struct {
 // reconciles so it drops out of the entity layer. If the device is still on the
 // network, the next collector cycle rediscovers it as a new device.
 func (s *Server) handleForgetHost(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireAdmin(w, r); !ok {
+	who, ok := s.requireOperator(w, r)
+	if !ok {
 		return
 	}
 	var req forgetRequest
@@ -55,6 +56,7 @@ func (s *Server) handleForgetHost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.log.Info("device forgotten", "stable_id", req.StableID, "subjects", len(subjects), "observations_removed", removed)
+	s.auditf(ctx, who, "host.forget", "%s (%d observations removed)", req.StableID, removed)
 	s.reconcileNow(ctx)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "observations_removed": removed})
 }

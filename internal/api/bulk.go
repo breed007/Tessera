@@ -5,12 +5,14 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/tessera/tessera/internal/account"
 	"github.com/tessera/tessera/internal/entity"
 	"github.com/tessera/tessera/internal/observation"
 )
 
-// bulkRequest applies one action to many devices at once (admin). For add_tags,
-// each host's existing tags are preserved and the new ones merged in.
+// bulkRequest applies one action to many devices at once (operator; the forget
+// action is admin-only). For add_tags, each host's existing tags are preserved
+// and the new ones merged in.
 type bulkRequest struct {
 	StableIDs []string `json:"stable_ids"`
 	Action    string   `json:"action"` // expected | ignored | new | add_tags | forget
@@ -18,7 +20,8 @@ type bulkRequest struct {
 }
 
 func (s *Server) handleBulk(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireAdmin(w, r); !ok {
+	who, ok := s.requireOperator(w, r)
+	if !ok {
 		return
 	}
 	var req bulkRequest
@@ -35,7 +38,14 @@ func (s *Server) handleBulk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch req.Action {
-	case "expected", "ignored", "new", "add_tags", "forget":
+	case "expected", "ignored", "new", "add_tags":
+	case "forget":
+		// Mass-deleting history is the most destructive lever in the app — it
+		// stays behind the admin bar even though single-device Forget doesn't.
+		if who.role != account.RoleAdmin {
+			writeErr(w, http.StatusForbidden, "bulk forget requires the admin role (a single device can be forgotten by an operator)")
+			return
+		}
 	default:
 		writeErr(w, http.StatusBadRequest, "unknown action")
 		return
@@ -95,6 +105,7 @@ func (s *Server) handleBulk(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.log.Info("bulk action", "action", req.Action, "requested", len(req.StableIDs), "affected", affected)
+	s.auditf(ctx, who, "hosts.bulk", "action=%s affected=%d", req.Action, affected)
 	s.reconcileNow(ctx)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "affected": affected})
 }

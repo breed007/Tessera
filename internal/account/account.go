@@ -17,15 +17,24 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// Role is a user's permission level.
+// Role is a user's permission level. Three fixed roles, deliberately not a
+// permission matrix: the line between operator and admin is credential blast
+// radius — Settings holds the UniFi/Proxmox/DNS credentials (and its connection
+// tests will send a stored secret to a supplied URL), so curating the inventory
+// must never require settings access.
 type Role string
 
 const (
-	RoleAdmin  Role = "admin"
-	RoleViewer Role = "viewer"
+	RoleAdmin    Role = "admin"    // everything, including settings/credentials, users, tokens, restore
+	RoleOperator Role = "operator" // day-to-day curation; no settings, users, tokens, or bulk-forget
+	RoleViewer   Role = "viewer"   // read-only (UI + reporting API tokens)
 )
 
-func ValidRole(r Role) bool { return r == RoleAdmin || r == RoleViewer }
+func ValidRole(r Role) bool { return r == RoleAdmin || r == RoleOperator || r == RoleViewer }
+
+// CanEdit reports whether the role may mutate inventory data (annotate, merge,
+// resolve conflicts, forget a device, …). Admin and operator can; viewer cannot.
+func CanEdit(r Role) bool { return r == RoleAdmin || r == RoleOperator }
 
 // User is an account. PasswordHash is never serialized to the API.
 type User struct {

@@ -30,7 +30,8 @@ type annotateRequest struct {
 }
 
 func (s *Server) handleAnnotate(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireAdmin(w, r); !ok {
+	who, ok := s.requireOperator(w, r)
+	if !ok {
 		return
 	}
 	var req annotateRequest
@@ -115,6 +116,7 @@ func (s *Server) handleAnnotate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.auditf(ctx, who, "host.annotate", "%s", req.StableID)
 	s.reconcileNow(ctx)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "stable_id": req.StableID})
 }
@@ -126,7 +128,8 @@ type reserveRequest struct {
 }
 
 func (s *Server) handleReserve(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireAdmin(w, r); !ok {
+	who, ok := s.requireOperator(w, r)
+	if !ok {
 		return
 	}
 	var req reserveRequest
@@ -152,6 +155,7 @@ func (s *Server) handleReserve(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.auditf(r.Context(), who, "address.reserve", "%s reserved=%v", ip, req.Reserved)
 	s.reconcileNow(r.Context())
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "ip": ip, "reserved": req.Reserved})
 }

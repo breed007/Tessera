@@ -735,7 +735,8 @@ const sortKeyFns = {
   name: (h) => (h.display_name || "").toLowerCase(),
   device: (h) => (h.model || h.device_class || "").toLowerCase(),
   conf: (h) => ((h.device_class || h.os_guess) ? h.confidence : 0) || 0,
-  addr: (h) => ipSortKey((h.ips || [])[0]),
+  status: (h) => (h.online ? 0 : 1), // online first
+  addr: (h) => ipSortKey(h.primary_ip || (h.ips || [])[0]),
   vendor: (h) => (h.vendor || "").toLowerCase(),
   expected: (h) => (h.is_expected ? 1 : 0),
   seen: (h) => Date.parse(h.last_seen) || 0,
@@ -760,15 +761,36 @@ function hostMatches(h, q) {
   return q.split(/\s+/).every((term) => hay.includes(term));
 }
 
+// statusPill renders reachability as an unmissable badge rather than a 6px dot.
+const statusPill = (online) => online
+  ? `<span class="st-pill on" title="Online — has an active address">● Online</span>`
+  : `<span class="st-pill off" title="Offline — no active address (last seen shown at right)">○ Offline</span>`;
+
+// primaryIPCell shows only the address the device is reachable at now. Older
+// addresses stay out of the table (they're the device's history, listed in its
+// detail) — a "+N" chip hints they exist without cluttering the row.
+function primaryIPCell(h) {
+  const ips = h.ips || [];
+  const primary = h.primary_ip || ips[0];
+  if (!primary) return "—";
+  const extra = Math.max(0, ips.length - 1);
+  return esc(primary) + (extra ? ` <span class="ip-more" title="${extra} earlier address${extra === 1 ? "" : "es"} — open the device to see its address history">+${extra}</span>` : "");
+}
+
+// "all" | "online" | "offline" — a first-class filter, since "what's actually up
+// right now?" is the most common question asked of an inventory.
+let onlineFilter = "all";
+
 let lastFilterSig = "";
 function renderHosts(hosts) {
   if (hosts) hostsData = hosts;
   // Changing the filter changes which rows you can see — drop any selection so a
   // bulk action can't hit invisible, no-longer-shown devices.
-  const filterSig = tagFilter + "\x1f" + hostQuery;
+  const filterSig = tagFilter + "\x1f" + hostQuery + "\x1f" + onlineFilter;
   if (filterSig !== lastFilterSig) { selectedHosts.clear(); lastFilterSig = filterSig; }
   let rows = hostsData;
   if (tagFilter) rows = rows.filter((h) => (h.tags || []).includes(tagFilter));
+  if (onlineFilter !== "all") rows = rows.filter((h) => (onlineFilter === "online" ? h.online : !h.online));
   if (hostQuery) rows = rows.filter((h) => hostMatches(h, hostQuery));
   if (hostSort.key && sortKeyFns[hostSort.key]) {
     const f = sortKeyFns[hostSort.key], d = hostSort.dir;
@@ -782,14 +804,15 @@ function renderHosts(hosts) {
   $("hosts-body").innerHTML = rows.length ? rows.map((h) => `
     <tr data-id="${esc(h.stable_id)}">
       <td class="sel-col">${isAdmin ? `<input type="checkbox" class="row-sel" data-id="${esc(h.stable_id)}" ${selectedHosts.has(h.stable_id) ? "checked" : ""}>` : ""}</td>
-      <td><span class="online-dot ${h.online ? "on" : "off"}" title="${h.online ? "online — has an active address" : "offline — no active address"}"></span><span class="dev-icon" style="${iconStyle(h.icon_url, "var(--accent)")}"></span>${esc(h.display_name || "(unnamed)")}${(h.tags || []).length ? `<div class="tags">${tagChips(h.tags, true)}</div>` : ""}</td>
+      <td>${statusPill(h.online)}</td>
+      <td><span class="dev-icon" style="${iconStyle(h.icon_url, "var(--accent)")}"></span>${esc(h.display_name || "(unnamed)")}${(h.tags || []).length ? `<div class="tags">${tagChips(h.tags, true)}</div>` : ""}</td>
       <td>${esc(h.model || h.device_class || "—")}</td>
-      <td class="mono">${(h.ips || []).map(esc).join(", ") || "—"}</td>
+      <td class="mono">${primaryIPCell(h)}</td>
       <td>${esc(h.vendor || "")}</td>
       <td>${expectedPill(h.is_expected)}</td>
       <td>${fmtTime(h.last_seen)}</td>
     </tr>`).join("")
-    : `<tr><td colspan="7" class="muted-note" style="padding:18px;text-align:center">${hostsData.length ? "No devices match the current filter." : (me.is_admin ? `No devices discovered yet. Enable a collector in <a href="#settings" class="link-in">Settings</a> — the UniFi poller or Proxmox pull inventory instantly; the active prober sweeps a subnet you scope.` : "No devices discovered yet — once a collector sees traffic, devices land here.")}</td></tr>`;
+    : `<tr><td colspan="8" class="muted-note" style="padding:18px;text-align:center">${hostsData.length ? "No devices match the current filter." : (me.is_admin ? `No devices discovered yet. Enable a collector in <a href="#settings" class="link-in">Settings</a> — the UniFi poller or Proxmox pull inventory instantly; the active prober sweeps a subnet you scope.` : "No devices discovered yet — once a collector sees traffic, devices land here.")}</td></tr>`;
   for (const tr of $("hosts-body").querySelectorAll("tr")) {
     tr.onclick = (e) => { if (!e.target.closest(".tag-chip") && !e.target.closest(".row-sel")) openHost(tr.dataset.id); };
   }
@@ -873,9 +896,18 @@ function renderTagFilterBar() {
   const pill = tagFilter ? `<span class="tag-chip" style="--tc:${tagColor(tagFilter)}">tag: ${esc(tagFilter)} <a class="clear" id="clear-tag">✕</a></span>` : "";
   const views = savedViews();
   const opts = `<option value="">Saved views…</option>` + views.map((v, i) => `<option value="${i}">${esc(v.name)}</option>`).join("");
-  bar.innerHTML = `${pill}<span class="grow"></span>
+  // Reachability filter with live counts — "what's up right now?" is the question
+  // an inventory gets asked most.
+  const onCount = hostsData.filter((h) => h.online).length;
+  const offCount = hostsData.length - onCount;
+  const segBtn = (k, label) => `<button class="seg ${onlineFilter === k ? "on" : ""}" data-online="${k}">${label}</button>`;
+  const seg = `<span class="seg-group">${segBtn("all", `All <b>${hostsData.length}</b>`)}${segBtn("online", `● Online <b>${onCount}</b>`)}${segBtn("offline", `○ Offline <b>${offCount}</b>`)}</span>`;
+  bar.innerHTML = `${seg}${pill}<span class="grow"></span>
     <select id="view-select" class="view-select" title="Saved views are stored in this browser only">${opts}</select>
     <button class="ghost" id="view-save" title="Saves to this browser only">Save view</button>${views.length ? `<button class="ghost" id="view-del">Delete</button>` : ""}`;
+  for (const b of bar.querySelectorAll("[data-online]")) {
+    b.onclick = () => { onlineFilter = b.dataset.online; renderHosts(); renderTagFilterBar(); };
+  }
   if ($("clear-tag")) $("clear-tag").onclick = () => { tagFilter = ""; renderHosts(); };
   $("view-select").onchange = (e) => { if (e.target.value !== "") applyView(views[+e.target.value]); };
   $("view-save").onclick = saveCurrentView;
@@ -889,14 +921,14 @@ function saveCurrentView() {
   const name = prompt("Save current filter as view — name:");
   if (!name) return;
   const v = savedViews();
-  v.push({ name: name.trim(), q: hostQuery, tag: tagFilter, sortKey: hostSort.key, sortDir: hostSort.dir });
+  v.push({ name: name.trim(), q: hostQuery, tag: tagFilter, online: onlineFilter, sortKey: hostSort.key, sortDir: hostSort.dir });
   setViews(v); renderTagFilterBar(); toast("View saved");
 }
 function applyView(v) {
-  hostQuery = v.q || ""; tagFilter = v.tag || "";
+  hostQuery = v.q || ""; tagFilter = v.tag || ""; onlineFilter = v.online || "all";
   hostSort = { key: v.sortKey || null, dir: v.sortDir || 1 };
   if ($("host-search")) $("host-search").value = hostQuery;
-  renderHosts();
+  renderHosts(); renderTagFilterBar();
 }
 function deleteView(i) { const v = savedViews(); v.splice(i, 1); setViews(v); renderTagFilterBar(); }
 
@@ -1180,7 +1212,18 @@ async function openHost(id) {
   const primaryIP = (d.addresses || [])[0] ? d.addresses[0].ip : "";
   const rows = (d.observations || []).map((o) => `<tr><td>${fmtTime(o.observed_at)}</td><td class="src">${esc(o.source)}</td><td>${esc(o.attribute)}</td><td>${esc(o.value)}</td><td class="conf">${o.confidence}</td>${isAdmin ? `<td>${xbtn(`data-kind="observation" data-id="${o.id}"`)}</td>` : ""}</tr>`).join("");
   const ifaces = (d.interfaces || []).map((i) => `<div class="mono art-row">${esc(i.mac)} ${i.is_randomized ? "· randomized" : ""} ${i.oui_vendor ? "· " + esc(i.oui_vendor) : ""}${xbtn(`data-kind="interface" data-mac="${esc(i.mac)}"`)}</div>`).join("") || "—";
-  const addrs = (d.addresses || []).map((a) => `<div class="mono art-row">${esc(a.ip)} <span class="conf">[${esc(a.state)}]</span>${a.dhcp ? ` <span class="conf">DHCP ${esc(a.dhcp)}</span>` : ""}${xbtn(`data-kind="address" data-ip="${esc(a.ip)}"`)}</div>`).join("") || "—";
+  // Address history: the server orders these most-current-first (active before
+  // stale, then newest last-seen), so the first row is where the device answers
+  // now and the rest are the addresses it used to hold. The inventory table only
+  // shows the current one — this is where the lineage lives.
+  const addrs = (d.addresses || []).map((a, i) => {
+    const cur = i === 0 && a.state === "active";
+    return `<div class="mono art-row">${esc(a.ip)}
+      ${cur ? `<span class="st-pill on">current</span>` : `<span class="conf">[${esc(a.state)}]</span>`}
+      ${a.dhcp ? `<span class="conf">DHCP ${esc(a.dhcp)}</span>` : ""}
+      <span class="conf addr-seen" title="First seen ${esc(a.first_seen || "")}">last seen ${fmtTime(a.last_seen)}</span>
+      ${xbtn(`data-kind="address" data-ip="${esc(a.ip)}"`)}</div>`;
+  }).join("") || "—";
   const svcs = (d.services || []).map((s) => `<div class="mono art-row">${esc(s.proto)}/${s.port} ${s.banner ? "· " + esc(s.banner) : ""}${xbtn(`data-kind="service" data-ip="${esc(ipById[s.address_id] || primaryIP)}" data-proto="${esc(s.proto)}" data-port="${s.port}"`)}</div>`).join("") || "—";
   const topo = (d.topology || []).map((t) => `<div class="mono">${esc(t.switch)} port ${esc(t.switch_port)}</div>`).join("") || "—";
   const changeLabel = { ip: "IP", firmware: "Firmware", model: "Model", os: "OS", device: "Device", hostname: "Hostname", service: "Service" };

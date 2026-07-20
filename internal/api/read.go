@@ -17,10 +17,15 @@ import (
 // HostRow is a host plus its bound identities, for the inventory table.
 type HostRow struct {
 	entity.Host
-	MACs    []string `json:"macs"`
-	IPs     []string `json:"ips"`
-	Vendor  string   `json:"vendor"`
-	Online  bool     `json:"online"`   // has at least one active address
+	MACs []string `json:"macs"`
+	// IPs are ordered most-current-first (active before stale, then newest
+	// last-seen); PrimaryIP is that head — the address the device is reachable
+	// at now. The inventory table shows PrimaryIP so a device that has moved
+	// around doesn't drag its whole address history across the row.
+	IPs       []string `json:"ips"`
+	PrimaryIP string   `json:"primary_ip"`
+	Vendor    string   `json:"vendor"`
+	Online    bool     `json:"online"`   // has at least one active address
 	IconID  string   `json:"icon_id"`  // effective icon (manual or auto-assigned)
 	IconURL string   `json:"icon_url"` // resolved asset path
 }
@@ -148,6 +153,9 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 			subjects = append(subjects, a.IP)
 		}
 	}
+	// Most-current first, so the detail header's primary IP is the address the
+	// device actually answers on and the rest read as its address history.
+	sortAddressesByRecency(detail.Addresses)
 	for _, sv := range snap.Services {
 		if sv.HostID != nil && *sv.HostID == host.ID {
 			detail.Services = append(detail.Services, sv)
@@ -430,6 +438,20 @@ func (s *Server) handleNewDevices(w http.ResponseWriter, r *http.Request) {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
+// sortAddressesByRecency orders a host's addresses "most current first": active
+// addresses ahead of stale/reserved/free, then newest last-seen. The head of the
+// slice is therefore the address the device is reachable at right now, which is
+// what the inventory table shows and what the detail header calls the primary IP.
+func sortAddressesByRecency(addrs []entity.Address) {
+	sort.SliceStable(addrs, func(i, j int) bool {
+		ai, aj := addrs[i].State == entity.StateActive, addrs[j].State == entity.StateActive
+		if ai != aj {
+			return ai // active wins
+		}
+		return addrs[i].LastSeen.After(addrs[j].LastSeen)
+	})
+}
+
 func buildHostRows(snap entity.Snapshot) []HostRow {
 	macsByHost := map[int64][]string{}
 	vendorByHost := map[int64]string{}
@@ -439,11 +461,11 @@ func buildHostRows(snap entity.Snapshot) []HostRow {
 			vendorByHost[i.HostID] = i.OUIVendor
 		}
 	}
-	ipsByHost := map[int64][]string{}
+	addrsByHost := map[int64][]entity.Address{}
 	onlineByHost := map[int64]bool{}
 	for _, a := range snap.Addresses {
 		if a.HostID != nil {
-			ipsByHost[*a.HostID] = append(ipsByHost[*a.HostID], a.IP)
+			addrsByHost[*a.HostID] = append(addrsByHost[*a.HostID], a)
 			if a.State == entity.StateActive {
 				onlineByHost[*a.HostID] = true
 			}
@@ -451,7 +473,20 @@ func buildHostRows(snap entity.Snapshot) []HostRow {
 	}
 	rows := make([]HostRow, 0, len(snap.Hosts))
 	for _, h := range snap.Hosts {
-		rows = append(rows, HostRow{Host: h, MACs: macsByHost[h.ID], IPs: ipsByHost[h.ID], Vendor: vendorByHost[h.ID], Online: onlineByHost[h.ID]})
+		addrs := addrsByHost[h.ID]
+		sortAddressesByRecency(addrs)
+		ips := make([]string, 0, len(addrs))
+		for _, a := range addrs {
+			ips = append(ips, a.IP)
+		}
+		primary := ""
+		if len(ips) > 0 {
+			primary = ips[0]
+		}
+		rows = append(rows, HostRow{
+			Host: h, MACs: macsByHost[h.ID], IPs: ips, PrimaryIP: primary,
+			Vendor: vendorByHost[h.ID], Online: onlineByHost[h.ID],
+		})
 	}
 	return rows
 }

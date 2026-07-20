@@ -1,5 +1,5 @@
 # Tessera — common developer + release tasks.
-VERSION ?= 0.9.0
+VERSION ?= 1.0.0
 BUILD ?= $(shell date +%Y.%m.%d.%H.%M)
 LDFLAGS := -s -w -X main.version=$(VERSION) -X main.buildNumber=$(BUILD)
 

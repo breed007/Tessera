@@ -757,7 +757,9 @@ function ipSortKey(ip) {
 function hostMatches(h, q) {
   if (!q) return true;
   const hay = [h.display_name, h.vendor, h.model, h.device_class, h.os_guess,
-    (h.ips || []).join(" "), (h.macs || []).join(" "), (h.tags || []).join(" ")].join(" ").toLowerCase();
+    (h.ips || []).join(" "), (h.macs || []).join(" "), (h.tags || []).join(" "),
+    // Network location: "10.0.20.0/24", "10.0.20." and "vlan 20" all find the host.
+    (h.subnets || []).join(" "), (h.vlans || []).map((v) => "vlan" + v + " vlan " + v).join(" ")].join(" ").toLowerCase();
   return q.split(/\s+/).every((term) => hay.includes(term));
 }
 
@@ -781,15 +783,35 @@ function primaryIPCell(h) {
 // right now?" is the most common question asked of an inventory.
 let onlineFilter = "all";
 
+// Subnet/VLAN scope: "" = everywhere, otherwise a CIDR the host holds an address
+// in — "show me everything on 10.0.20.0/24".
+let subnetFilter = "";
+
+// subnetOptions lists the subnets present in the inventory with host counts,
+// labelled with their VLAN when one is known.
+function subnetOptions() {
+  const byCIDR = new Map();
+  for (const h of hostsData) {
+    for (const cidr of h.subnets || []) {
+      const e = byCIDR.get(cidr) || { cidr, count: 0, vlan: (h.vlans || [])[0] };
+      e.count++;
+      if (e.vlan == null) e.vlan = (h.vlans || [])[0];
+      byCIDR.set(cidr, e);
+    }
+  }
+  return [...byCIDR.values()].sort((a, b) => ipSortKey(a.cidr) < ipSortKey(b.cidr) ? -1 : 1);
+}
+
 let lastFilterSig = "";
 function renderHosts(hosts) {
   if (hosts) hostsData = hosts;
   // Changing the filter changes which rows you can see — drop any selection so a
   // bulk action can't hit invisible, no-longer-shown devices.
-  const filterSig = tagFilter + "\x1f" + hostQuery + "\x1f" + onlineFilter;
+  const filterSig = tagFilter + "\x1f" + hostQuery + "\x1f" + onlineFilter + "\x1f" + subnetFilter;
   if (filterSig !== lastFilterSig) { selectedHosts.clear(); lastFilterSig = filterSig; }
   let rows = hostsData;
   if (tagFilter) rows = rows.filter((h) => (h.tags || []).includes(tagFilter));
+  if (subnetFilter) rows = rows.filter((h) => (h.subnets || []).includes(subnetFilter));
   if (onlineFilter !== "all") rows = rows.filter((h) => (onlineFilter === "online" ? h.online : !h.online));
   if (hostQuery) rows = rows.filter((h) => hostMatches(h, hostQuery));
   if (hostSort.key && sortKeyFns[hostSort.key]) {
@@ -902,12 +924,21 @@ function renderTagFilterBar() {
   const offCount = hostsData.length - onCount;
   const segBtn = (k, label) => `<button class="seg ${onlineFilter === k ? "on" : ""}" data-online="${k}">${label}</button>`;
   const seg = `<span class="seg-group">${segBtn("all", `All <b>${hostsData.length}</b>`)}${segBtn("online", `● Online <b>${onCount}</b>`)}${segBtn("offline", `○ Offline <b>${offCount}</b>`)}</span>`;
-  bar.innerHTML = `${seg}${pill}<span class="grow"></span>
+  // Network scope — "show me everything on 10.0.20.0/24".
+  const subs = subnetOptions();
+  const subSel = subs.length
+    ? `<select id="subnet-filter" class="view-select" title="Show only devices with an address in this subnet">
+        <option value="">All subnets</option>
+        ${subs.map((s) => `<option value="${esc(s.cidr)}" ${subnetFilter === s.cidr ? "selected" : ""}>${esc(s.cidr)}${s.vlan != null ? ` · VLAN ${s.vlan}` : ""} (${s.count})</option>`).join("")}
+       </select>`
+    : "";
+  bar.innerHTML = `${seg}${subSel}${pill}<span class="grow"></span>
     <select id="view-select" class="view-select" title="Saved views are stored in this browser only">${opts}</select>
     <button class="ghost" id="view-save" title="Saves to this browser only">Save view</button>${views.length ? `<button class="ghost" id="view-del">Delete</button>` : ""}`;
   for (const b of bar.querySelectorAll("[data-online]")) {
     b.onclick = () => { onlineFilter = b.dataset.online; renderHosts(); renderTagFilterBar(); };
   }
+  if ($("subnet-filter")) $("subnet-filter").onchange = (e) => { subnetFilter = e.target.value; renderHosts(); renderTagFilterBar(); };
   if ($("clear-tag")) $("clear-tag").onclick = () => { tagFilter = ""; renderHosts(); };
   $("view-select").onchange = (e) => { if (e.target.value !== "") applyView(views[+e.target.value]); };
   $("view-save").onclick = saveCurrentView;
@@ -921,11 +952,11 @@ function saveCurrentView() {
   const name = prompt("Save current filter as view — name:");
   if (!name) return;
   const v = savedViews();
-  v.push({ name: name.trim(), q: hostQuery, tag: tagFilter, online: onlineFilter, sortKey: hostSort.key, sortDir: hostSort.dir });
+  v.push({ name: name.trim(), q: hostQuery, tag: tagFilter, online: onlineFilter, subnet: subnetFilter, sortKey: hostSort.key, sortDir: hostSort.dir });
   setViews(v); renderTagFilterBar(); toast("View saved");
 }
 function applyView(v) {
-  hostQuery = v.q || ""; tagFilter = v.tag || ""; onlineFilter = v.online || "all";
+  hostQuery = v.q || ""; tagFilter = v.tag || ""; onlineFilter = v.online || "all"; subnetFilter = v.subnet || "";
   hostSort = { key: v.sortKey || null, dir: v.sortDir || 1 };
   if ($("host-search")) $("host-search").value = hostQuery;
   renderHosts(); renderTagFilterBar();

@@ -55,3 +55,40 @@ func TestPrimaryIPIsMostCurrent(t *testing.T) {
 		t.Error("host with no active address should be offline")
 	}
 }
+
+// TestHostRowCarriesSubnetAndVLAN: the inventory can only answer "everything on
+// 10.0.20.0/24" (or "on VLAN 20") if each row knows where it lives.
+func TestHostRowCarriesSubnetAndVLAN(t *testing.T) {
+	t0 := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	h1, h2 := int64(1), int64(2)
+	sid20, sid30 := int64(10), int64(20)
+	v20, v30 := 20, 30
+	snap := entity.Snapshot{
+		Subnets: []entity.Subnet{
+			{ID: sid20, CIDR: "10.0.20.0/24", VLANID: &v20, Name: "iot"},
+			{ID: sid30, CIDR: "10.0.30.0/24", VLANID: &v30, Name: "guest"},
+		},
+		Hosts: []entity.Host{{ID: h1, StableID: "mac:aa"}, {ID: h2, StableID: "mac:bb"}},
+		Addresses: []entity.Address{
+			{IP: "10.0.20.5", HostID: &h1, SubnetID: &sid20, State: entity.StateActive, LastSeen: t0},
+			// Multi-homed: same host also holds a guest-VLAN address.
+			{IP: "10.0.30.9", HostID: &h1, SubnetID: &sid30, State: entity.StateStale, LastSeen: t0},
+			{IP: "10.0.30.7", HostID: &h2, SubnetID: &sid30, State: entity.StateActive, LastSeen: t0},
+		},
+	}
+	byID := map[string]HostRow{}
+	for _, r := range buildHostRows(snap) {
+		byID[r.StableID] = r
+	}
+	a := byID["mac:aa"]
+	if len(a.Subnets) != 2 || a.Subnets[0] != "10.0.20.0/24" {
+		t.Errorf("multi-homed host subnets = %v, want the primary address's subnet first", a.Subnets)
+	}
+	if len(a.VLANs) != 2 {
+		t.Errorf("VLANs = %v, want both", a.VLANs)
+	}
+	b := byID["mac:bb"]
+	if len(b.Subnets) != 1 || b.Subnets[0] != "10.0.30.0/24" || len(b.VLANs) != 1 || b.VLANs[0] != 30 {
+		t.Errorf("host b subnets=%v vlans=%v, want [10.0.30.0/24] / [30]", b.Subnets, b.VLANs)
+	}
+}

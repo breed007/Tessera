@@ -24,8 +24,12 @@ type HostRow struct {
 	// around doesn't drag its whole address history across the row.
 	IPs       []string `json:"ips"`
 	PrimaryIP string   `json:"primary_ip"`
-	Vendor    string   `json:"vendor"`
-	Online    bool     `json:"online"`   // has at least one active address
+	// Subnets/VLANs the host holds addresses in (primary address first), so the
+	// inventory can answer "show me everything on 10.0.20.0/24" or "on VLAN 20".
+	Subnets []string `json:"subnets,omitempty"`
+	VLANs   []int    `json:"vlans,omitempty"`
+	Vendor  string   `json:"vendor"`
+	Online  bool     `json:"online"`   // has at least one active address
 	IconID  string   `json:"icon_id"`  // effective icon (manual or auto-assigned)
 	IconURL string   `json:"icon_url"` // resolved asset path
 }
@@ -471,13 +475,35 @@ func buildHostRows(snap entity.Snapshot) []HostRow {
 			}
 		}
 	}
+	subnetByID := map[int64]entity.Subnet{}
+	for _, sn := range snap.Subnets {
+		subnetByID[sn.ID] = sn
+	}
 	rows := make([]HostRow, 0, len(snap.Hosts))
 	for _, h := range snap.Hosts {
 		addrs := addrsByHost[h.ID]
 		sortAddressesByRecency(addrs)
 		ips := make([]string, 0, len(addrs))
+		var subnets []string
+		var vlans []int
+		seenSub, seenVLAN := map[string]bool{}, map[int]bool{}
 		for _, a := range addrs {
 			ips = append(ips, a.IP)
+			if a.SubnetID == nil {
+				continue
+			}
+			sn, ok := subnetByID[*a.SubnetID]
+			if !ok {
+				continue
+			}
+			if sn.CIDR != "" && !seenSub[sn.CIDR] {
+				seenSub[sn.CIDR] = true
+				subnets = append(subnets, sn.CIDR)
+			}
+			if sn.VLANID != nil && !seenVLAN[*sn.VLANID] {
+				seenVLAN[*sn.VLANID] = true
+				vlans = append(vlans, *sn.VLANID)
+			}
 		}
 		primary := ""
 		if len(ips) > 0 {
@@ -485,6 +511,7 @@ func buildHostRows(snap entity.Snapshot) []HostRow {
 		}
 		rows = append(rows, HostRow{
 			Host: h, MACs: macsByHost[h.ID], IPs: ips, PrimaryIP: primary,
+			Subnets: subnets, VLANs: vlans,
 			Vendor: vendorByHost[h.ID], Online: onlineByHost[h.ID],
 		})
 	}

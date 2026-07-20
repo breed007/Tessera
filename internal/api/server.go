@@ -223,7 +223,7 @@ func (s *Server) routes() http.Handler {
 
 	mux.Handle("/", web.Handler())
 
-	return logRequests(s.log, v1Alias(s.authGate(mux)))
+	return securityHeaders(logRequests(s.log, v1Alias(s.authGate(mux))))
 }
 
 // ListenAndServe binds and serves (HTTP or HTTPS) until ctx is cancelled.
@@ -281,6 +281,46 @@ func writeErr(w http.ResponseWriter, status int, msg string) {
 
 func contextWithTimeout(r *http.Request, d time.Duration) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(r.Context(), d)
+}
+
+// appCSP is the global Content-Security-Policy for the UI and API.
+//
+// The app is entirely first-party and self-contained (one external app.js, no
+// inline <script>, no inline event handlers, no eval, no CDN/font origins), so
+// scripts lock down to 'self' with NO 'unsafe-inline' or 'unsafe-eval' — the
+// strong form that actually stops injected script from running.
+//
+// style-src needs 'unsafe-inline' because the UI sets ~30 inline style=
+// attributes from JS (icon masks, chart geometry, show/hide). Inline CSS is a
+// far weaker vector than script, and removing it would mean rewriting the render
+// layer for little gain.
+//
+// Handlers may override this with something stricter — the custom-icon route
+// sets its own sandbox CSP for operator-uploaded SVGs, and since it Sets the
+// header after this middleware, the stricter policy wins.
+const appCSP = "default-src 'none'; " +
+	"script-src 'self'; " +
+	"style-src 'self' 'unsafe-inline'; " +
+	"img-src 'self'; " +
+	"font-src 'self'; " +
+	"connect-src 'self'; " +
+	"form-action 'self'; " +
+	"base-uri 'none'; " +
+	"frame-ancestors 'none'; " +
+	"object-src 'none'"
+
+// securityHeaders applies the global CSP plus the standard hardening headers to
+// every response. Deliberately no HSTS: Tessera commonly runs plain HTTP on a
+// LAN, and pinning HTTPS there would lock operators out.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Security-Policy", appCSP)
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY") // legacy backstop for frame-ancestors
+		h.Set("Referrer-Policy", "no-referrer")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // v1Alias serves the stable /api/v1/* surface by rewriting to the same /api/*

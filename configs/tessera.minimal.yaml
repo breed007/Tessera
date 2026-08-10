@@ -1,0 +1,16 @@
+# Tessera configuration.
+#
+# You normally don't need to edit this — everything else (UniFi, SNMP,
+# Fingerbank, the active prober, the passive sensor, port, TLS, users, icons) is
+# configured in the web UI under Settings, and persisted in the database.
+#
+# Full annotated reference: /usr/share/doc/tessera/tessera.example.yaml
+#                           (or configs/tessera.example.yaml in the source).
+
+api:
+  enabled: true
+  listen_addr: 0.0.0.0:10404      # all interfaces; set 127.0.0.1:10404 for localhost-only
+
+storage:
+  driver: sqlite
+  dsn: /var/lib/tessera/tessera.db

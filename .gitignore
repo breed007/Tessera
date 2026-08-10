@@ -7,9 +7,15 @@
 *.db-shm
 *.db-wal
 
-# Any config that may contain a real deployment's values; only the example is tracked.
+# Any config that may contain a real deployment's values is ignored. The two
+# shipped templates are not deployment configs and must stay tracked — nfpm
+# packages both into the deb/rpm/apk (see .goreleaser.yaml `contents`), so a
+# clean checkout cannot build a release without them:
+#   tessera.example.yaml -> /usr/share/doc/tessera/tessera.example.yaml
+#   tessera.minimal.yaml -> /etc/tessera/config.yaml  (config|noreplace)
 /configs/*.yaml
 !/configs/tessera.example.yaml
+!/configs/tessera.minimal.yaml
 
 # Editor / OS noise
 .DS_Store

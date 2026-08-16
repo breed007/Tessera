@@ -5,8 +5,13 @@ classification and OS identification**. It summarizes the whole project, then
 goes deep on the identification subsystem — where it lives, how confidence
 works, what's bundled, and where the real seams are.
 
-**State as of this doc:** v1.0.0, 18 migrations, all tests green.
-Last commit: `313fe45`.
+**State as of this doc:** v1.0.0, 19 migrations, all tests green.
+
+**Updated 2026-08-16** — five identification techniques ported from IP Recon 1.5
+(`os_version` as its own attribute; macOS/tvOS release from an AirPlay build
+string; Windows release from an NTLMSSP CHALLENGE; Proxmox VE identity/version;
+Linux distribution + release from an SSH banner; ESPHome via `/events`). None of
+the five has been exercised against live hardware from Tessera — see §5.
 
 ---
 
@@ -86,7 +91,12 @@ in released builds.** That matters a lot for identification work — see §5.
 From `internal/observation/observation.go`:
 
 - `device_class` — what kind of thing it is ("computer", "printer", …)
-- `os_guess` — operating system
+- `os_guess` — operating system **family/name** ("macOS", "Windows", "Proxmox VE")
+- `os_version` — the **release**, contested separately ("26.6", "13",
+  "11 24H2 (build 26100)"). Bare by design; readers compose the two. The
+  reconciler attaches a version only when its source also stated the winning
+  `os_guess`, so a release derived for one family can never be printed against
+  another
 - `model` — precise hardware model (e.g. `MacBook Pro (16-inch, M4 Pro, Nov 2024)`)
 - `oui_vendor`, `dhcp_fingerprint`, `dhcp_vendor`, `hostname`, `service_banner`,
   `open_port`, `tcp_behavior`, `user_agent`
@@ -99,7 +109,14 @@ as a tiebreak, and manual annotations always authoritative.
 
 | Confidence | Signal | Where |
 |---|---|---|
+| 90 | **Proxmox VE** login page (:8006) → identity + version | `active/proxmoxve.go` |
+| 90 / 86 | **Windows release + build** from an NTLMSSP CHALLENGE / the Windows family | `active/ntlm.go` |
 | **88** | **mDNS `model=` exact match** → precise marketing name via Apple table | `passive/parse.go`, `active/emit.go` |
+| 88 | **macOS / tvOS release** derived from an AirPlay build string | `active/applebuild.go` |
+| 72 | lockdownd listening on 62078 → iOS family (never a Mac) | `active/prober.go` |
+| 88 | ESPHome firmware (answered `/events`) | `active/esphome.go` |
+| 80 / 62 | Debian release **stated** in an SSH banner / Ubuntu release **inferred** | `active/sshbanner.go` |
+| 78 | ESPHome device class from the **entity set** (not the editable title) | `active/esphome.go` |
 | 85 | UniFi controller gear model | `unifi/mapping.go` |
 | 82 | Media probe model (AirPlay `/info`, Cast `eureka_info`) | `active/emit.go` |
 | 78 / 76 | Media probe device class / OS | `active/emit.go` |
@@ -208,6 +225,20 @@ scattered across collectors. There is no central definition. See §5.
 
 These are real, verified gaps — good starting points for the next session.
 
+0. **Owed: live verification of the 2026-08-16 probes.** All five are unit-tested
+   against measured wire shapes, and none has run against a real device *from
+   Tessera*. IP Recon's 1.5 postmortem names its dominant failure mode as
+   "correct code that never ran", every instance found by looking at a device and
+   none by a self-check — so this is the honest state, not a formality.
+
+   `config.Default()` now ships a TCP port list (`22, 80, 443, 445, 3389, 161,
+   5000, 7000, 8006, 49152, 62078`) precisely because a missing port silently
+   switches off the probe behind it. That pairing is asserted in
+   `config.TestDefaultTCPPortsGateTheIdentityProbes`. The remaining gate is the
+   device end: **445 or 3389 open** on the Windows host, 8006 on the hypervisor,
+   62078 on an iPhone (only when Wi-Fi sync is enabled), and 7000 on a Mac with
+   AirPlay Receiver on.
+
 1. **Declared-but-unwired signals.** `AttrUserAgent` and `SourcePassiveTLS`
    (TLS SNI) are defined in `observation.go`, but **nothing ever emits them**.
    Fingerbank only *reads* `user_agent` as an input. So: no HTTP User-Agent
@@ -233,9 +264,13 @@ These are real, verified gaps — good starting points for the next session.
    step) would improve grouping, icons, and filtering — and is a prerequisite
    for good per-class reporting.
 
-5. **OS strings are inconsistent in shape.** Some are bare (`"iOS"`), some
-   versioned (`"iOS 18.3.1"`, from AirPlay), some are raw SNMP `sysDescr` dumps
-   (verbose, 70 conf). No normalization or version extraction exists.
+5. ~~**OS strings are inconsistent in shape.**~~ **Partly addressed** (2026-08-16):
+   `os_version` now exists as its own attribute, and the AirPlay, NTLM, Proxmox
+   and SSH-banner paths all populate it. **Still open:** raw SNMP `sysDescr`
+   dumps are written verbatim into `os_guess` at 70 (`active/prober.go`), which
+   is the last place an OS name can be a paragraph of text. That one wants the
+   same treatment — parse it into a name plus a version, or demote it to a
+   banner that feeds inference.
 
 6. **Fingerbank is off by default** (privacy: it sends DHCP fingerprints to a
    third party). The `local_db` mode exists and is offline — under-exploited.
@@ -278,6 +313,11 @@ internal/collector/passive/parse.go    # mDNS/DHCP/SSDP parsing + classifyMDNS*
 internal/collector/passive/apple_models.go
 internal/collector/active/mdns.go      # active mDNS service-type catalog
 internal/collector/active/media.go     # AirPlay + Google Cast identity probes
+internal/collector/active/applebuild.go# Apple build string → macOS / tvOS release
+internal/collector/active/ntlm.go      # NTLMSSP challenge (SMB/RDP) → Windows release + names
+internal/collector/active/proxmoxve.go # Proxmox VE login page → identity + version
+internal/collector/active/sshbanner.go # SSH banner → distribution + release
+internal/collector/active/esphome.go   # ESPHome /events → title + entity set
 internal/collector/unifi/fpdb.go       # UniFi fingerprint/model lookups
 internal/icons/icons.go                # class/vendor → icon
 internal/observation/observation.go    # attributes + sources (source of truth)

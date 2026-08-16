@@ -37,8 +37,8 @@ func setupConflict(t *testing.T) *httptest.Server {
 		}
 	}
 	rec(observation.SourceUniFi, observation.AttrIPBinding, "10.0.0.30", 90)
-	rec(observation.SourceUniFi, observation.AttrDeviceClass, "Ford F-150 Lightning", 75)
-	rec(observation.SourceFingerbank, observation.AttrDeviceClass, "Ford F-150 Raptor", 80)
+	rec(observation.SourceUniFi, observation.AttrDeviceClass, "smart speaker", 75)
+	rec(observation.SourceFingerbank, observation.AttrDeviceClass, "smart display", 80)
 
 	recon := reconcile.New(st, nil, reconcile.Params{Now: func() time.Time { return t0.Add(time.Minute) }})
 	if _, err := recon.Rebuild(ctx); err != nil {
@@ -107,10 +107,10 @@ func TestConflictResolveReopen(t *testing.T) {
 		t.Errorf("summary open_conflicts = %d, want 1", sum.OpenConflicts)
 	}
 
-	// Resolve it: keep "Ford F-150 Raptor" as source of truth.
+	// Resolve it: keep "smart display" as source of truth.
 	r := authPost(t, ts.URL+"/api/conflict/resolve", map[string]any{
 		"subject": "mac:aa:bb:cc:00:00:21", "attribute": "device_class",
-		"value": "Ford F-150 Raptor", "source": "fingerbank", "note": "it's the Raptor",
+		"value": "smart display", "source": "fingerbank", "note": "it's the display",
 	})
 	if r.StatusCode != 200 {
 		t.Fatalf("resolve → %d, want 200", r.StatusCode)
@@ -123,14 +123,14 @@ func TestConflictResolveReopen(t *testing.T) {
 	if len(got.Open) != 0 || len(got.Resolved) != 1 {
 		t.Fatalf("after resolve = %d open / %d resolved, want 0/1", len(got.Open), len(got.Resolved))
 	}
-	if got.Resolved[0]["chosen_value"] != "Ford F-150 Raptor" {
+	if got.Resolved[0]["chosen_value"] != "smart display" {
 		t.Errorf("resolved chosen_value = %v", got.Resolved[0]["chosen_value"])
 	}
 	if sum := getJSON[Summary](t, ts.URL+"/api/summary"); sum.OpenConflicts != 0 {
 		t.Errorf("summary open_conflicts after resolve = %d, want 0", sum.OpenConflicts)
 	}
 	detail := getJSON[HostDetail](t, ts.URL+"/api/host?id=mac:aa:bb:cc:00:00:21")
-	if detail.Host.DeviceClass != "Ford F-150 Raptor" {
+	if detail.Host.DeviceClass != "smart display" {
 		t.Errorf("host device_class = %q, want the resolved value", detail.Host.DeviceClass)
 	}
 

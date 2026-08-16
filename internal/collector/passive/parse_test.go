@@ -138,7 +138,7 @@ func TestParseMDNSServices(t *testing.T) {
 }
 
 func TestParseMDNSAppleModelPrecise(t *testing.T) {
-	// The user's case: an M4 16" MacBook reports model=Mac16,7 via _device-info.
+	// An M4 16" MacBook reports model=Mac16,7 via _device-info.
 	dns := &layers.DNS{
 		QR: true,
 		Answers: []layers.DNSResourceRecord{{

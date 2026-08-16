@@ -26,9 +26,9 @@ import (
 //
 //  1. THE BUILD IS USUALLY IN THE VERSION FIELD AT OFFSET 48, not in the
 //     MsvAvOsVersion AvPair. Their parser read only the AvPair, and both live
-//     Windows 11 hosts measured on 2026-08-14
-//     omitted it entirely while sending `10.0 build 26100` at offset 48.
-//     The exact build was on the wire in every response and discarded.
+//     Windows 11 hosts measured on 2026-08-14 omitted it entirely while sending
+//     `10.0 build 26100` at offset 48. The exact build was on the wire in every
+//     response and discarded.
 //
 //  2. THE VERSION FIELD IS ONLY THERE WHEN THE FLAGS SAY SO. Those eight bytes
 //     are payload unless NTLMSSP_NEGOTIATE_VERSION is set in NegotiateFlags —

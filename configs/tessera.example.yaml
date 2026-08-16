@@ -48,7 +48,19 @@ active_probe:
                                          # originate from a capture/SPAN NIC.
   icmp: true
   # Only the ports you list are probed — there is no default UDP sweep.
-  tcp_ports: [22, 80, 443, 445, 3389, 161]
+  # These are the defaults — omit the key entirely to keep them. Several are
+  # there to feed an identity probe as much as to report a service:
+  #   445 / 3389  Windows release + build (NTLM challenge, no credentials sent)
+  #   8006        Proxmox VE identity + version (unauthenticated login page)
+  #   7000        AirPlay /info on a MAC — Macs answer here, not on 49152
+  #   49152       AirPlay /info on an iOS device
+  #   5000        classic AirTunes/RAOP, and Synology DSM
+  #   62078       iOS Wi-Fi sync (lockdownd) — listening proves the iOS family
+  # A probe whose port is not listed here loses its head start, and the ones
+  # gated on a port (Windows, Proxmox, lockdownd) do not run at all.
+  # To scan no TCP ports, set discovery.active_tcp to false — an empty list here
+  # falls back to the defaults rather than disabling the scan.
+  tcp_ports: [22, 80, 443, 445, 3389, 161, 5000, 7000, 8006, 49152, 62078]
   udp_ports: [5353, 1900]                # mDNS + SSDP by default; add e.g. 53, 123, 161, 500
   # SNMP community strings, tried in order against each host (first that answers
   # wins). Visible/editable (also in the Settings UI) — community strings are
@@ -82,6 +94,9 @@ discovery:
   active_snmp: true        # SNMP sysName/sysDescr (needs a community string)
   active_mdns: true        # unicast mDNS query → service types + model= (Fire TV, Apple TV, Cast, Ring, …)
   active_media: true       # AirPlay (:49152) + Google Cast (:8008) HTTP identity probes (exact model + name)
+  active_ntlm: true        # NTLMSSP challenge on SMB (:445) / RDP (:3389) → Windows release + build (no credentials sent)
+  active_proxmox: true     # Proxmox VE login page (:8006) → hypervisor identity + version (unauthenticated)
+  active_esphome: true     # ESPHome /events → device name + entity set (needs active_mdns)
   tcp_behavioral: true     # closed-port timing → weak OS/firewall fingerprint
   thorough_wake: true      # extra wake pass for power-saving devices (slower sweep)
 

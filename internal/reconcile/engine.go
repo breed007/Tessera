@@ -228,7 +228,7 @@ func (e *engine) applyMAC(h *hostAcc, obs observation.Observation) {
 			iface.oui.add(e.score(obs))
 		}
 
-	case observation.AttrHostname, observation.AttrDeviceClass, observation.AttrOSGuess, observation.AttrFirmware, observation.AttrModel,
+	case observation.AttrHostname, observation.AttrDeviceClass, observation.AttrOSGuess, observation.AttrOSVersion, observation.AttrFirmware, observation.AttrModel,
 		observation.AttrDisplayName, observation.AttrIsExpected, observation.AttrIgnored, observation.AttrTags, observation.AttrNotes, observation.AttrIcon:
 		e.hostAttr(h, obs)
 
@@ -252,7 +252,7 @@ func (e *engine) applyIP(h *hostAcc, obs observation.Observation) {
 	case observation.AttrHostname:
 		e.hostAttr(h, obs)
 		e.support(a, obs.ObservedAt)
-	case observation.AttrDeviceClass, observation.AttrOSGuess, observation.AttrTCPBehavior, observation.AttrModel,
+	case observation.AttrDeviceClass, observation.AttrOSGuess, observation.AttrOSVersion, observation.AttrTCPBehavior, observation.AttrModel,
 		observation.AttrDisplayName, observation.AttrIsExpected, observation.AttrIgnored, observation.AttrTags, observation.AttrNotes, observation.AttrIcon:
 		// IP-subject classification (SNMP), behavioural fingerprint, and IP-keyed
 		// manual annotations.
@@ -525,6 +525,16 @@ func (e *engine) snapshot() (entity.Snapshot, []conflictRec) {
 			if host.Confidence == 0 {
 				host.Confidence = clampConf(s.eff * e.randomizedFactor(h))
 			}
+		}
+		// os_version is contested on its own evidence but only ATTACHES to an OS
+		// name the same source stated. Without that guard a version derived for
+		// one family can end up rendered against another — an AirPlay-derived
+		// "26.6" printed after a UniFi-fingerprinted "Windows" — which reads as a
+		// fact and is not one. A version with no corroborating name is dropped
+		// rather than shown alone: "26.6" on its own means nothing to a reader.
+		if w, ok := winnerScored(h.attrs[observation.AttrOSVersion]); ok &&
+			sourceAsserted(h.attrs[observation.AttrOSGuess], w.obs.Source, host.OSGuess) {
+			host.OSVersion = w.obs.Value
 		}
 		// Generic inference (§6): for anything the authoritative collectors left
 		// unclassified, derive a Hardware/Device and OS from the weak signals and
@@ -836,6 +846,26 @@ func winnerValuePref(r *resolver, preferred string) (string, bool) {
 		return "", false
 	}
 	return s.obs.Value, true
+}
+
+// sourceAsserted reports whether src is among the sources that asserted value
+// for this attribute. It is the corroboration test behind the os_version guard:
+// a version is only attached to an OS name its own probe also stated. A manual
+// annotation counts as corroboration for any source — an operator who names the
+// OS by hand has overridden the discovered name, not invalidated the version.
+func sourceAsserted(r *resolver, src observation.Source, value string) bool {
+	if r == nil || value == "" {
+		return false
+	}
+	for _, c := range r.cands {
+		if c.obs.Value != value {
+			continue
+		}
+		if c.obs.Source == src || c.obs.Source == observation.SourceManual {
+			return true
+		}
+	}
+	return false
 }
 
 func winnerScored(r *resolver) (scored, bool) {

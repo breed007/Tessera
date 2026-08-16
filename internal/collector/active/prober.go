@@ -34,6 +34,9 @@ type Config struct {
 	SNMPCommunities []string // tried in order; empty → SNMP disabled
 	MDNS            bool     // unicast mDNS query for service types / model=
 	Media           bool     // AirPlay/Cast HTTP identity probes
+	NTLM            bool     // NTLMSSP challenge on SMB/RDP → Windows build + names
+	Proxmox         bool     // unauthenticated Proxmox VE login page → identity + version
+	ESPHome         bool     // ESPHome /events → device title + entity set
 	TCPBehavioral   bool     // closed-port timing fingerprint
 	ThoroughWake    bool     // extra wake pass for power-saving devices
 	MaxProbesPerSec int
@@ -65,10 +68,15 @@ type Prober struct {
 	snmpOn          bool
 	mdnsOn          bool
 	mediaOn         bool
+	ntlmOn          bool
+	proxmoxOn       bool
+	esphomeOn       bool
 	tcpBehavior     bool
 	thoroughWake    bool
 	snmpCommunities []string
 	mediaClient     *http.Client
+	pveClient       *http.Client // accepts Proxmox's default self-signed certificate
+	esphomeClient   *http.Client // no timeout of its own: /events never closes, so the context bounds it
 	limiter         *limiter
 	cycleInterval   time.Duration
 	concurrency     int
@@ -109,10 +117,15 @@ func NewProber(cfg Config, log *slog.Logger) *Prober {
 		snmpOn:          cfg.SNMP,
 		mdnsOn:          cfg.MDNS,
 		mediaOn:         cfg.Media,
+		ntlmOn:          cfg.NTLM,
+		proxmoxOn:       cfg.Proxmox,
+		esphomeOn:       cfg.ESPHome,
 		tcpBehavior:     cfg.TCPBehavioral,
 		thoroughWake:    cfg.ThoroughWake,
 		snmpCommunities: cfg.SNMPCommunities,
 		mediaClient:     &http.Client{Timeout: 3 * time.Second},
+		pveClient:       newSelfSignedClient(4 * time.Second),
+		esphomeClient:   &http.Client{},
 		limiter:         newLimiter(cfg.MaxProbesPerSec),
 		cycleInterval:   cycle,
 		concurrency:     32,
@@ -292,6 +305,10 @@ func (p *Prober) probeHost(ctx context.Context, ip netip.Addr, sink *observation
 		}
 	}
 
+	// Which ports answered, so the follow-up identity probes below only run where
+	// the scan already justifies them (§4.2: no speculative connections).
+	open := map[int]bool{}
+
 	if p.tcpEnabled {
 		for _, port := range p.ports {
 			if p.limiter.wait(ctx) != nil {
@@ -301,11 +318,16 @@ func (p *Prober) probeHost(ctx context.Context, ip netip.Addr, sink *observation
 			switch {
 			case res.open:
 				alive = true
+				open[port] = true
 				pp := "tcp/" + strconv.Itoa(port)
 				p.record(ctx, sink, emit{observation.SourceActiveTCP, observation.SubjectIPv4, ipStr, observation.AttrOpenPort, pp, confTCPOpen})
 				p.record(ctx, sink, emit{observation.SourceActiveTCP, observation.SubjectIPv4, ipStr, observation.AttrLiveness, "up", confTCPLive})
 				if p.bannersOn && res.banner != "" {
 					p.record(ctx, sink, emit{observation.SourceActiveTCP, observation.SubjectIPv4, ipStr, observation.AttrServiceBanner, pp + "|" + res.banner, confTCPBanner})
+					// An SSH banner frequently states the distribution and, on
+					// Debian, the release outright. The inference layer reduces
+					// the same string to bare "Linux"; this reads what it says.
+					p.recordSSHDistro(ctx, sink, ipStr, res.banner)
 				}
 			case res.refused:
 				alive = true
@@ -377,6 +399,20 @@ func (p *Prober) probeHost(ctx context.Context, ip netip.Addr, sink *observation
 		}
 	}
 
+	// Windows identity: an NTLMSSP CHALLENGE states the host's exact OS build and
+	// its NetBIOS/DNS names. Gated on SMB or RDP already being open — the probe
+	// never opens a port the scan didn't find. Unauthenticated: the exchange
+	// stops at the CHALLENGE and never sends an AUTHENTICATE.
+	if p.ntlmOn && (open[445] || open[3389]) && p.limiter.wait(ctx) == nil {
+		p.recordNTLM(ctx, sink, ipStr, open[445], open[3389])
+	}
+
+	// Proxmox VE: the login page on 8006 states the hypervisor's identity and
+	// version to anyone who asks. Gated on the port being open.
+	if p.proxmoxOn && open[8006] && p.limiter.wait(ctx) == nil {
+		p.recordProxmoxVE(ctx, sink, ipStr)
+	}
+
 	// Active mDNS: a unicast Bonjour query surfaces the device's own service
 	// advertisements (Fire TV, Apple TV, Chromecast, Ring, Echo, printers, …) and
 	// self-reported model= — SPAN-free, the highest-signal identity for consumer
@@ -391,7 +427,126 @@ func (p *Prober) probeHost(ctx context.Context, ip netip.Addr, sink *observation
 	// mDNS query already flagged as AirPlay/Cast devices — so we don't hit those
 	// ports on every host, only the handful worth the round-trip.
 	if p.mediaOn && mf != nil {
-		p.recordMedia(ctx, sink, ipStr, mf)
+		p.recordMedia(ctx, sink, ipStr, mf, open)
+	}
+
+	// lockdownd (TCP 62078) — iOS Wi-Fi sync, the service behind Finder/iTunes
+	// pairing. A listener here is an iOS-family device and never a Mac, which
+	// makes it the one positive tell an iPhone or iPad offers a scanner: they
+	// advertise no _device-info, and their MACs are randomized per SSID by
+	// default. IP Recon's M2 concluded the OPEN PORT is the signal — its TLS
+	// QueryType handshake said no more about the family than the listener does.
+	//
+	// It cannot separate an iPhone from an iPad; that needs a paired GetValue,
+	// which needs a trust relationship this project will never establish. The
+	// family-level answer is where the evidence honestly stops.
+	if open[62078] {
+		p.record(ctx, sink, emit{observation.SourceActiveTCP, observation.SubjectIPv4, ipStr, observation.AttrDeviceClass, "Apple mobile device", confLockdownClass})
+		p.record(ctx, sink, emit{observation.SourceActiveTCP, observation.SubjectIPv4, ipStr, observation.AttrOSGuess, "iOS", confLockdownOS})
+	}
+
+	// ESPHome: gated on the device's own _esphomelib advertisement, so the
+	// /events stream is only opened where mDNS already proved what is listening.
+	if p.esphomeOn && mf != nil && mf.hasService("_esphomelib") && p.limiter.wait(ctx) == nil {
+		p.recordESPHome(ctx, sink, ipStr)
+	}
+}
+
+// recordNTLM runs the Windows identity probe and emits what the CHALLENGE
+// stated. os_guess stays the coarse family — the release goes in os_version, so
+// the two are contested separately and the reconciler can attach the version to
+// whichever "Windows" wins.
+func (p *Prober) recordNTLM(ctx context.Context, sink *observation.Sink, ipStr string, smbOpen, rdpOpen bool) {
+	r := probeNTLM(ctx, ipStr, smbOpen, rdpOpen, p.connectTimeout, p.sourceIP)
+	if r == nil {
+		return
+	}
+	src := observation.SourceActiveNTLM
+	// The CHALLENGE proves Windows regardless of whether the build parsed: only
+	// a Windows (or Samba) stack answers NTLM at all.
+	p.record(ctx, sink, emit{src, observation.SubjectIPv4, ipStr, observation.AttrOSGuess, "Windows", confNTLMOS})
+	if r.osVersion != "" {
+		p.record(ctx, sink, emit{src, observation.SubjectIPv4, ipStr, observation.AttrOSVersion, r.osVersion, confNTLMOSVersion})
+	}
+	if name := r.hostname(); name != "" {
+		p.record(ctx, sink, emit{src, observation.SubjectIPv4, ipStr, observation.AttrHostname, name, confNTLMHost})
+	}
+}
+
+// recordESPHome emits what the /events stream volunteered. The entity-derived
+// class is the strong claim; the title is the owner's label and is emitted as a
+// hostname at a confidence that reflects being user-editable.
+func (p *Prober) recordESPHome(ctx context.Context, sink *observation.Sink, ipStr string) {
+	f := probeESPHome(ctx, ipStr, p.esphomeClient)
+	if f == nil {
+		return
+	}
+	src := observation.SourceActiveESPHome
+	// Answering /events at all proves the firmware, which is the OS here.
+	p.record(ctx, sink, emit{src, observation.SubjectIPv4, ipStr, observation.AttrOSGuess, "ESPHome", confESPHomeOS})
+	if class := f.deviceClass(); class != "" {
+		p.record(ctx, sink, emit{src, observation.SubjectIPv4, ipStr, observation.AttrDeviceClass, class, confESPHomeClass})
+	} else {
+		// Nothing specific in the entity set — an ESPHome board is still an IoT
+		// device, and saying only that is the honest answer.
+		p.record(ctx, sink, emit{src, observation.SubjectIPv4, ipStr, observation.AttrDeviceClass, "IoT device", confESPHomeGeneric})
+	}
+	if f.title != "" {
+		p.record(ctx, sink, emit{src, observation.SubjectIPv4, ipStr, observation.AttrHostname, f.title, confESPHomeName})
+	}
+}
+
+// orderByOpen returns candidates with the ones the scan found open moved to the
+// front, preserving the relative order of each group. Every candidate is kept —
+// this decides what to try FIRST, not what to try at all.
+func orderByOpen(candidates []int, open map[int]bool) []int {
+	out := make([]int, 0, len(candidates))
+	for _, c := range candidates {
+		if open[c] {
+			out = append(out, c)
+		}
+	}
+	for _, c := range candidates {
+		if !open[c] {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// recordSSHDistro emits the distribution and release an SSH banner stated.
+// Both come from the same source, so the reconciler's corroboration test
+// attaches the release to the name whenever this reading wins.
+func (p *Prober) recordSSHDistro(ctx context.Context, sink *observation.Sink, ipStr, banner string) {
+	d := distroFromSSHBanner(banner)
+	if d == nil {
+		return
+	}
+	src := observation.SourceActiveTCP
+	p.record(ctx, sink, emit{src, observation.SubjectIPv4, ipStr, observation.AttrOSGuess, d.name, d.nameConf})
+	if d.version != "" {
+		p.record(ctx, sink, emit{src, observation.SubjectIPv4, ipStr, observation.AttrOSVersion, d.version, d.versionConf})
+	}
+}
+
+// recordProxmoxVE emits the hypervisor's identity, version and node name.
+//
+// "Proxmox VE" deliberately outranks the "Debian"/"Linux" that the SSH banner
+// and inference produce for the same host: both are true, and the specific one
+// is the useful one.
+func (p *Prober) recordProxmoxVE(ctx context.Context, sink *observation.Sink, ipStr string) {
+	f := probeProxmoxVE(ctx, ipStr, p.pveClient)
+	if f == nil {
+		return
+	}
+	src := observation.SourceActiveProxmoxVE
+	p.record(ctx, sink, emit{src, observation.SubjectIPv4, ipStr, observation.AttrOSGuess, "Proxmox VE", confPVEOS})
+	p.record(ctx, sink, emit{src, observation.SubjectIPv4, ipStr, observation.AttrDeviceClass, "server", confPVEClass})
+	if f.version != "" {
+		p.record(ctx, sink, emit{src, observation.SubjectIPv4, ipStr, observation.AttrOSVersion, f.version, confPVEVersion})
+	}
+	if f.nodeName != "" {
+		p.record(ctx, sink, emit{src, observation.SubjectIPv4, ipStr, observation.AttrHostname, f.nodeName, confPVEHost})
 	}
 }
 
@@ -437,12 +592,21 @@ func (p *Prober) recordMDNS(ctx context.Context, sink *observation.Sink, ipStr s
 }
 
 // recordMedia runs the media HTTP identity probes that the host's mDNS
-// advertisement warrants: AirPlay (:49152) only when an Apple AirPlay/RAOP
-// service was seen, Google Cast (:8008) only when a Cast/DIAL service was seen.
-func (p *Prober) recordMedia(ctx context.Context, sink *observation.Sink, ipStr string, mf *mdnsFindings) {
+// advertisement warrants: AirPlay only when an Apple AirPlay/RAOP service was
+// seen, Google Cast (:8008) only when a Cast/DIAL service was seen.
+//
+// open ORDERS the AirPlay attempt — ports the scan found open are tried first,
+// so a Mac (which answers on 7000) and an iOS device (49152) are each reached in
+// one request. It is deliberately not a gate: the device's own mDNS
+// advertisement is what justifies the probe, and an operator who trimmed the
+// scanned-port list should not thereby lose the identification.
+func (p *Prober) recordMedia(ctx context.Context, sink *observation.Sink, ipStr string, mf *mdnsFindings, open map[int]bool) {
 	var probes []func(context.Context, string, *http.Client) mediaFindings
 	if mf.hasService("_airplay", "_raop", "_airplay-p2p", "_appletv-v2") {
-		probes = append(probes, probeAirPlay)
+		ports := orderByOpen(airplayPorts, open)
+		probes = append(probes, func(ctx context.Context, host string, c *http.Client) mediaFindings {
+			return probeAirPlay(ctx, host, ports, c)
+		})
 	}
 	if mf.hasService("_googlecast", "_dial", "_androidtvremote2") {
 		probes = append(probes, probeGoogleCast)
@@ -464,6 +628,12 @@ func (p *Prober) recordMedia(ctx context.Context, sink *observation.Sink, ipStr 
 		}
 		if f.os != "" {
 			p.record(ctx, sink, emit{src, observation.SubjectIPv4, ipStr, observation.AttrOSGuess, f.os, confMediaOS})
+			// The version only ever accompanies the name from the same read — the
+			// reconciler drops an os_version whose source did not also state the
+			// winning os_guess, so emitting one without the other is wasted.
+			if f.osVersion != "" {
+				p.record(ctx, sink, emit{src, observation.SubjectIPv4, ipStr, observation.AttrOSVersion, f.osVersion, confMediaOSVersion})
+			}
 		}
 		if f.name != "" {
 			p.record(ctx, sink, emit{src, observation.SubjectIPv4, ipStr, observation.AttrHostname, f.name, confMediaName})

@@ -752,11 +752,19 @@ function ipSortKey(ip) {
   return ip;
 }
 
+// osLabel composes the OS name and its release for display. They are stored and
+// contested separately (a service type says "macOS"; only a direct probe says
+// "26.6"), so every reader joins them here rather than each doing it its own way.
+function osLabel(h) {
+  if (!h.os_guess) return "";
+  return h.os_version ? h.os_guess + " " + h.os_version : h.os_guess;
+}
+
 // hostMatches tests a host against the free-text inventory search (name, IPs,
 // MACs, vendor, model, device class, OS).
 function hostMatches(h, q) {
   if (!q) return true;
-  const hay = [h.display_name, h.vendor, h.model, h.device_class, h.os_guess,
+  const hay = [h.display_name, h.vendor, h.model, h.device_class, osLabel(h),
     (h.ips || []).join(" "), (h.macs || []).join(" "), (h.tags || []).join(" "),
     // Network location: "10.0.20.0/24", "10.0.20." and "vlan 20" all find the host.
     (h.subnets || []).join(" "), (h.vlans || []).map((v) => "vlan" + v + " vlan " + v).join(" ")].join(" ").toLowerCase();
@@ -1325,7 +1333,7 @@ async function openHost(id) {
     ${actions}
     <dl class="kv">
       <dt>Hardware</dt><dd>${hardware}</dd>
-      <dt>Operating System</dt><dd>${esc(h.os_guess || "—")} ${h.os_guess ? confBadge(h.confidence) : ""}</dd>
+      <dt>Operating System</dt><dd>${esc(osLabel(h) || "—")} ${h.os_guess ? confBadge(h.confidence) : ""}</dd>
       ${h.firmware ? `<dt>Firmware</dt><dd class="mono">${esc(h.firmware)}</dd>` : ""}
       ${(h.tags || []).length ? `<dt>Tags</dt><dd><div class="tags">${tagChips(h.tags, false)}</div></dd>` : ""}
       <dt>Expected</dt><dd>${expectedPill(h.is_expected)}</dd>
@@ -1534,7 +1542,7 @@ async function openSettings() {
       ${txt("set-ap-subnets", "Subnets (comma-separated CIDRs)", (e.active_probe_subnets || []).join(", "))}
       ${txt("set-ap-ports", "TCP ports to scan (comma-separated)", (e.active_probe_tcp_ports || []).join(", "))}
       ${txt("set-ap-uports", "UDP ports to scan (comma-separated)", (e.active_probe_udp_ports || []).join(", "))}
-      <p class="muted-note">Only the ports you list here are probed. Leave UDP blank to skip UDP scanning. Common UDP services: 53 (DNS), 123 (NTP), 161 (SNMP), 500 (IKE), 1900 (SSDP), 5353 (mDNS).</p>
+      <p class="muted-note">Only the ports you list here are probed, and an identity probe never runs on a port the scan did not find: 445 or 3389 for the Windows release, 8006 for Proxmox VE, 62078 for the iOS family, and 7000/49152 for an Apple device's exact model and OS build. Clearing this field restores the defaults (22, 80, 443, 445, 3389, 161, 5000, 7000, 8006, 49152, 62078) — to scan no TCP ports at all, turn off <em>TCP connect scan</em> under Discovery. Leave UDP blank to skip UDP scanning. Common UDP services: 53 (DNS), 123 (NTP), 161 (SNMP), 500 (IKE), 1900 (SSDP), 5353 (mDNS).</p>
       ${txt("set-ap-iface", "Egress interface (blank = default route)", e.active_probe_interface)}
     </div>
 
@@ -1582,6 +1590,9 @@ async function openSettings() {
         ${chk("disc-a-snmp", "SNMP <span class='th'>sysName/sysDescr</span>", e.disc_active_snmp)}
         ${chk("disc-a-mdns", "mDNS query <span class='th'>Fire TV · Apple TV · Cast · Ring — service types + model</span>", e.disc_active_mdns)}
         ${chk("disc-a-media", "Media probes <span class='th'>AirPlay :49152 · Cast :8008 — exact model · needs mDNS query on</span>", e.disc_active_media)}
+        ${chk("disc-a-ntlm", "Windows identity <span class='th'>NTLM challenge on SMB :445 / RDP :3389 — release + build · no credentials sent</span>", e.disc_active_ntlm)}
+        ${chk("disc-a-pve", "Proxmox VE <span class='th'>login page :8006 — hypervisor identity + version · unauthenticated</span>", e.disc_active_proxmox)}
+        ${chk("disc-a-esph", "ESPHome <span class='th'>/events — device name + entity set · needs mDNS query on</span>", e.disc_active_esphome)}
         ${chk("disc-a-tcpbeh", "TCP behavioral scan <span class='th'>OS / firewall fingerprint</span>", e.disc_tcp_behavioral)}
         ${chk("disc-a-wake", "Thorough Wake <span class='th'>extra pass for sleepy devices · slower</span>", e.disc_thorough_wake)}
       </div>
@@ -1814,6 +1825,8 @@ function wireSettings(canSec) {
       disc_active_banners: checked("disc-a-ban"), disc_active_reverse_dns: checked("disc-a-rdns"),
       disc_active_arp_table: checked("disc-a-arp"), disc_active_snmp: checked("disc-a-snmp"),
       disc_active_mdns: checked("disc-a-mdns"), disc_active_media: checked("disc-a-media"),
+      disc_active_ntlm: checked("disc-a-ntlm"), disc_active_proxmox: checked("disc-a-pve"),
+      disc_active_esphome: checked("disc-a-esph"),
       disc_tcp_behavioral: checked("disc-a-tcpbeh"), disc_thorough_wake: checked("disc-a-wake"),
       alerts_enabled: checked("set-al-en"), alerts_kind: $("set-al-kind").value,
       alert_new_device: checked("set-al-new"), alert_offline: checked("set-al-off"),
@@ -1909,7 +1922,7 @@ function paletteSearch(q) {
   const out = [];
   // Hosts (from the already-loaded inventory).
   for (const h of hostsData) {
-    const hay = [h.display_name, h.vendor, h.model, h.device_class, h.os_guess,
+    const hay = [h.display_name, h.vendor, h.model, h.device_class, osLabel(h),
       (h.ips || []).join(" "), (h.macs || []).join(" "), (h.tags || []).join(" ")].join(" ").toLowerCase();
     if (hit(hay)) out.push({ kind: "device", icon: "🖥", title: h.display_name || (h.ips || [])[0] || (h.macs || [])[0] || h.stable_id,
       sub: [(h.ips || [])[0], h.model || h.device_class].filter(Boolean).join(" · "), act: () => openHost(h.stable_id) });

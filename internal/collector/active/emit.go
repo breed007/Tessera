@@ -47,4 +47,51 @@ const (
 	confMediaModel = 82
 	confMediaOS    = 76
 	confMediaName  = 74
+	// The release is a direct read of (or arithmetic on) the device's own build
+	// string — a firmer statement than the family name inferred alongside it, and
+	// on the same footing as an exact model= self-report.
+	confMediaOSVersion = 88
+)
+
+// NTLM: a CHALLENGE is the host's own statement of what it runs, and only a
+// Windows (or Samba) stack answers one at all — so the family is firm and the
+// build, read straight out of the message, firmer still. The hostname is the
+// machine's configured name, on a par with an mDNS self-report.
+const (
+	confNTLMOS        = 86
+	confNTLMOSVersion = 90
+	confNTLMHost      = 78
+)
+
+// Proxmox VE: the login page names the product outright and states its own
+// version, so both are near-certain. The class is an inference from the product
+// (a hypervisor is a server) and sits lower. The node name is the hypervisor's
+// own, on a par with other first-party names.
+const (
+	confPVEOS      = 90
+	confPVEVersion = 90
+	confPVEClass   = 80
+	confPVEHost    = 84
+)
+
+// ESPHome: answering /events proves the firmware outright. The class derived
+// from the ENTITY SET is structural — not editable without reflashing — so it
+// is nearly as firm; the fallback "IoT device" is true but says little. The
+// title is the owner's label and freely editable, so it stays a soft hostname.
+const (
+	confESPHomeOS      = 88
+	confESPHomeClass   = 78
+	confESPHomeGeneric = 60
+	confESPHomeName    = 55
+)
+
+// lockdownd on 62078: strong, but held below the first-party self-reports
+// (78–88) on purpose. Those read a device's own statement of what it is; this
+// infers a family from a listening port, and 62078 sits inside the ephemeral
+// range Windows allocates from, so a coincidental listener is possible. High
+// enough to beat a vendor's guess, low enough that an AirPlay /info or an exact
+// mDNS model= still wins.
+const (
+	confLockdownClass = 72
+	confLockdownOS    = 72
 )

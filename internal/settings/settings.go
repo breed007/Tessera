@@ -121,6 +121,9 @@ type Editable struct {
 	DiscActiveSNMP       bool `json:"disc_active_snmp"`
 	DiscActiveMDNS       bool `json:"disc_active_mdns"`
 	DiscActiveMedia      bool `json:"disc_active_media"`
+	DiscActiveNTLM       bool `json:"disc_active_ntlm"`
+	DiscActiveProxmox    bool `json:"disc_active_proxmox"`
+	DiscActiveESPHome    bool `json:"disc_active_esphome"`
 	DiscTCPBehavioral    bool `json:"disc_tcp_behavioral"`
 	DiscThoroughWake     bool `json:"disc_thorough_wake"`
 }
@@ -332,6 +335,7 @@ func applyEditable(c *config.Config, e Editable) {
 		ActiveBanners:    b(e.DiscActiveBanners),
 		ActiveReverseDNS: b(e.DiscActiveReverseDNS), ActiveARPTable: b(e.DiscActiveARPTable),
 		ActiveSNMP: b(e.DiscActiveSNMP), ActiveMDNS: b(e.DiscActiveMDNS), ActiveMedia: b(e.DiscActiveMedia),
+		ActiveNTLM: b(e.DiscActiveNTLM), ActiveProxmox: b(e.DiscActiveProxmox), ActiveESPHome: b(e.DiscActiveESPHome),
 		TCPBehavioral: b(e.DiscTCPBehavioral), ThoroughWake: b(e.DiscThoroughWake),
 	}
 }
@@ -392,6 +396,9 @@ func extractEditable(c config.Config) Editable {
 		DiscActiveSNMP:       d.ActiveSNMP,
 		DiscActiveMDNS:       d.ActiveMDNS,
 		DiscActiveMedia:      d.ActiveMedia,
+		DiscActiveNTLM:       d.ActiveNTLM,
+		DiscActiveProxmox:    d.ActiveProxmox,
+		DiscActiveESPHome:    d.ActiveESPHome,
 		DiscTCPBehavioral:    d.TCPBehavioral,
 		DiscThoroughWake:     d.ThoroughWake,
 	}

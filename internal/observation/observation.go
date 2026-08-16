@@ -13,29 +13,32 @@ import (
 type Source string
 
 const (
-	SourcePassiveARP   Source = "passive_arp"
-	SourcePassiveDHCP  Source = "passive_dhcp"
-	SourcePassiveDHCP6 Source = "passive_dhcp6"
-	SourcePassiveMDNS  Source = "passive_mdns"
-	SourcePassiveSSDP  Source = "passive_ssdp"
-	SourcePassiveNBNS  Source = "passive_netbios"
-	SourcePassiveTLS   Source = "passive_tls_sni"
-	SourceActiveICMP   Source = "active_icmp"
-	SourceActiveARP    Source = "active_arp"
-	SourceActiveTCP    Source = "active_tcp"
-	SourceActiveUDP    Source = "active_udp"          // UDP service probe
-	SourceActiveTCPBeh Source = "active_tcp_behavior" // TCP behavioural fingerprint
-	SourceActiveRDNS   Source = "active_rdns"
-	SourceActiveSNMP   Source = "active_snmp"
-	SourceActiveMDNS   Source = "active_mdns"  // unicast mDNS query (service types, model=)
-	SourceActiveMedia  Source = "active_media" // AirPlay/Cast HTTP identity probe
-	SourceInferred     Source = "inferred" // reconciler's generic-inference layer
-	SourceUniFi        Source = "unifi"
-	SourceProxmox      Source = "proxmox" // Proxmox VE VM/CT inventory
-	SourceFingerbank   Source = "fingerbank"
-	SourceDHCPLeases   Source = "dhcp_leases" // gateway/server DHCP lease table (dnsmasq, …)
-	SourceDNS          Source = "dns"         // authoritative name↔IP records (hosts files, AdGuard)
-	SourceManual       Source = "manual"
+	SourcePassiveARP      Source = "passive_arp"
+	SourcePassiveDHCP     Source = "passive_dhcp"
+	SourcePassiveDHCP6    Source = "passive_dhcp6"
+	SourcePassiveMDNS     Source = "passive_mdns"
+	SourcePassiveSSDP     Source = "passive_ssdp"
+	SourcePassiveNBNS     Source = "passive_netbios"
+	SourcePassiveTLS      Source = "passive_tls_sni"
+	SourceActiveICMP      Source = "active_icmp"
+	SourceActiveARP       Source = "active_arp"
+	SourceActiveTCP       Source = "active_tcp"
+	SourceActiveUDP       Source = "active_udp"          // UDP service probe
+	SourceActiveTCPBeh    Source = "active_tcp_behavior" // TCP behavioural fingerprint
+	SourceActiveRDNS      Source = "active_rdns"
+	SourceActiveSNMP      Source = "active_snmp"
+	SourceActiveMDNS      Source = "active_mdns"       // unicast mDNS query (service types, model=)
+	SourceActiveMedia     Source = "active_media"      // AirPlay/Cast HTTP identity probe
+	SourceActiveNTLM      Source = "active_ntlm"       // NTLMSSP challenge on SMB/RDP (Windows build + names)
+	SourceActiveProxmoxVE Source = "active_proxmox_ve" // unauthenticated Proxmox VE login page (identity + version)
+	SourceActiveESPHome   Source = "active_esphome"    // ESPHome /events stream (title + entity set)
+	SourceInferred        Source = "inferred"          // reconciler's generic-inference layer
+	SourceUniFi           Source = "unifi"
+	SourceProxmox         Source = "proxmox" // Proxmox VE VM/CT inventory
+	SourceFingerbank      Source = "fingerbank"
+	SourceDHCPLeases      Source = "dhcp_leases" // gateway/server DHCP lease table (dnsmasq, …)
+	SourceDNS             Source = "dns"         // authoritative name↔IP records (hosts files, AdGuard)
+	SourceManual          Source = "manual"
 )
 
 var validSources = map[Source]bool{
@@ -43,7 +46,7 @@ var validSources = map[Source]bool{
 	SourcePassiveMDNS: true, SourcePassiveSSDP: true, SourcePassiveNBNS: true,
 	SourcePassiveTLS: true, SourceActiveICMP: true, SourceActiveARP: true,
 	SourceActiveTCP: true, SourceActiveUDP: true, SourceActiveTCPBeh: true, SourceActiveRDNS: true,
-	SourceActiveSNMP: true, SourceActiveMDNS: true, SourceActiveMedia: true, SourceInferred: true,
+	SourceActiveSNMP: true, SourceActiveMDNS: true, SourceActiveMedia: true, SourceActiveNTLM: true, SourceActiveProxmoxVE: true, SourceActiveESPHome: true, SourceInferred: true,
 	SourceUniFi: true, SourceProxmox: true, SourceFingerbank: true, SourceDHCPLeases: true, SourceDNS: true, SourceManual: true,
 }
 
@@ -75,16 +78,24 @@ const (
 	AttrUserAgent       Attribute = "user_agent"
 	AttrDeviceClass     Attribute = "device_class"
 	AttrOSGuess         Attribute = "os_guess"
-	AttrFirmware        Attribute = "firmware" // device firmware/version (e.g. UniFi gear)
-	AttrModel           Attribute = "model"    // precise hardware model (mDNS self-report > UniFi)
-	AttrOpenPort        Attribute = "open_port"
-	AttrServiceBanner   Attribute = "service_banner"
-	AttrTCPBehavior     Attribute = "tcp_behavior" // closed-port behaviour: rst_immediate|silent_drop|icmp_unreachable
-	AttrSwitchPort      Attribute = "switch_port"
-	AttrVLANMembership  Attribute = "vlan_membership"
-	AttrSubnetHint      Attribute = "subnet_hint"
-	AttrFirstSeen       Attribute = "first_seen"
-	AttrLastSeen        Attribute = "last_seen"
+	// AttrOSVersion is the OS release, held SEPARATELY from os_guess so each is
+	// contested on its own evidence. The two frequently come from different
+	// sources at different strengths — an mDNS service type says "macOS" while
+	// only an AirPlay /info read says "26.6" — and folding them into one string
+	// meant the weaker, more numerous bare guesses kept beating the versioned
+	// ones. Values are BARE ("26.6", "13", "11 24H2 (build 26100)"); the caller
+	// composes "os_guess + os_version" for display.
+	AttrOSVersion      Attribute = "os_version"
+	AttrFirmware       Attribute = "firmware" // device firmware/version (e.g. UniFi gear)
+	AttrModel          Attribute = "model"    // precise hardware model (mDNS self-report > UniFi)
+	AttrOpenPort       Attribute = "open_port"
+	AttrServiceBanner  Attribute = "service_banner"
+	AttrTCPBehavior    Attribute = "tcp_behavior" // closed-port behaviour: rst_immediate|silent_drop|icmp_unreachable
+	AttrSwitchPort     Attribute = "switch_port"
+	AttrVLANMembership Attribute = "vlan_membership"
+	AttrSubnetHint     Attribute = "subnet_hint"
+	AttrFirstSeen      Attribute = "first_seen"
+	AttrLastSeen       Attribute = "last_seen"
 	// Human-annotation attributes (§3.2). Written only by the manual source via
 	// the API; authoritative in reconciliation.
 	AttrIsExpected  Attribute = "is_expected"  // "true"/"false" — device is known/expected
@@ -100,7 +111,7 @@ const (
 var validAttributes = map[Attribute]bool{
 	AttrIPBinding: true, AttrLiveness: true, AttrHostname: true, AttrOUIVendor: true,
 	AttrDHCPFingerprint: true, AttrDHCPVendor: true, AttrUserAgent: true,
-	AttrDeviceClass: true, AttrOSGuess: true, AttrFirmware: true, AttrModel: true, AttrOpenPort: true, AttrServiceBanner: true,
+	AttrDeviceClass: true, AttrOSGuess: true, AttrOSVersion: true, AttrFirmware: true, AttrModel: true, AttrOpenPort: true, AttrServiceBanner: true,
 	AttrTCPBehavior: true,
 	AttrSwitchPort:  true, AttrVLANMembership: true, AttrSubnetHint: true,
 	AttrFirstSeen: true, AttrLastSeen: true,

@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"howett.net/plist"
@@ -15,10 +17,13 @@ import (
 // well-known local port and yield an exact model + name — the strongest device
 // tell short of a login. SPAN-free: a direct connection to the host.
 
-// mediaFindings is what a media identity probe surfaced.
+// mediaFindings is what a media identity probe surfaced. os is the bare family
+// name ("macOS"); osVersion is the bare release ("26.6") — kept apart because
+// they are contested separately and only composed for display.
 type mediaFindings struct {
 	deviceClass string
 	os          string
+	osVersion   string
 	model       string
 	name        string
 }
@@ -27,12 +32,42 @@ func (m mediaFindings) empty() bool {
 	return m.deviceClass == "" && m.os == "" && m.model == "" && m.name == ""
 }
 
-// probeAirPlay queries an AirPlay responder's /info endpoint (TCP 49152) for its
-// identity plist. Apple TV, HomePod, iPhone, iPad, and Mac all answer. Returns
-// empty findings when the host isn't AirPlay or the body is unparseable.
-func probeAirPlay(ctx context.Context, host string, client *http.Client) mediaFindings {
+// airplayPorts are the ports an AirPlay responder serves /info on, in the order
+// worth trying.
+//
+// THE PORT IS NOT ALWAYS 49152, and hardcoding it is why this probe returned
+// nothing for every Mac on the network. Measured 2026-08-14 against two Macs:
+//
+//	GET http://<mac>:7000/info
+//	  osBuildVersion = 25G76   model = Mac16,8   name = studiombp14
+//
+// iOS devices answer on 49152; Macs answer on 7000. mDNS supplies none of this
+// for a Mac — no Mac advertises `_device-info._tcp`, so `osxvers` is simply
+// unavailable on modern macOS and this endpoint is the only replacement. 5000 is
+// the classic AirTunes/RAOP port, kept as a last resort for third-party
+// receivers; nothing measured says a /info lives there.
+var airplayPorts = []int{7000, 49152, 5000}
+
+// probeAirPlay queries an AirPlay responder's /info endpoint for its identity
+// plist. Apple TV, HomePod, iPhone, iPad, and Mac all answer, on the ports
+// above. ports narrows the candidates to those the scan found open; an empty
+// list means "try them all" (the TCP scan is off, so nothing is known).
+// Returns empty findings when the host isn't AirPlay or the body is unparseable.
+func probeAirPlay(ctx context.Context, host string, ports []int, client *http.Client) mediaFindings {
+	if len(ports) == 0 {
+		ports = airplayPorts
+	}
+	for _, port := range ports {
+		if f := probeAirPlayPort(ctx, host, port, client); !f.empty() {
+			return f
+		}
+	}
+	return mediaFindings{}
+}
+
+func probeAirPlayPort(ctx context.Context, host string, port int, client *http.Client) mediaFindings {
 	for _, path := range []string{"/info", "/server-info"} {
-		body, server, ok := airplayGet(ctx, host, path, client)
+		body, server, ok := airplayGet(ctx, host, port, path, client)
 		if !ok {
 			continue
 		}
@@ -41,7 +76,13 @@ func probeAirPlay(ctx context.Context, host string, client *http.Client) mediaFi
 		if _, err := plist.Unmarshal(body, &doc); err == nil {
 			f.model = str(doc["model"])
 			f.name = str(doc["name"])
-			f.os = osFromApple(str(doc["model"]), str(doc["osVersion"]))
+			// Which version key is present depends on the device, and reading only
+			// the first is why Macs and Apple TVs reported no version at all:
+			// iPhone/iPad send `osVersion` outright; Mac and Apple TV send only a
+			// build string, under either spelling. appleOSVersion prefers a stated
+			// version and derives one from the build otherwise.
+			f.osVersion = appleOSVersion(f.model, str(doc["osVersion"]),
+				pick(str(doc["osBuildVersion"]), str(doc["buildVersion"])))
 		}
 		f.deviceClass, f.os = classifyAppleModel(f.model, f.os, server)
 		if !f.empty() {
@@ -51,8 +92,8 @@ func probeAirPlay(ctx context.Context, host string, client *http.Client) mediaFi
 	return mediaFindings{}
 }
 
-func airplayGet(ctx context.Context, host, path string, client *http.Client) (body []byte, server string, ok bool) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+host+":49152"+path, nil)
+func airplayGet(ctx context.Context, host string, port int, path string, client *http.Client) (body []byte, server string, ok bool) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+net.JoinHostPort(host, strconv.Itoa(port))+path, nil)
 	if err != nil {
 		return nil, "", false
 	}
@@ -92,24 +133,6 @@ func classifyAppleModel(model, os, server string) (dev, outOS string) {
 		return "media / TV device", os
 	}
 	return "", os
-}
-
-func osFromApple(model, osVersion string) string {
-	if osVersion == "" {
-		return ""
-	}
-	m := strings.ToLower(model)
-	switch {
-	case strings.HasPrefix(m, "appletv"):
-		return "tvOS " + osVersion
-	case strings.HasPrefix(m, "ipad"):
-		return "iPadOS " + osVersion
-	case strings.HasPrefix(m, "iphone"), strings.HasPrefix(m, "ipod"):
-		return "iOS " + osVersion
-	case strings.HasPrefix(m, "mac"):
-		return "macOS " + osVersion
-	}
-	return osVersion
 }
 
 // probeGoogleCast queries the Google Cast eureka_info endpoint (TCP 8008) for

@@ -39,8 +39,9 @@ type Host struct {
 	DisplayName string    `json:"display_name,omitempty"`
 	DeviceClass string    `json:"device_class,omitempty"`
 	OSGuess     string    `json:"os_guess,omitempty"`
-	Model       string    `json:"model,omitempty"`    // precise hardware model (mDNS self-report > UniFi)
-	Firmware    string    `json:"firmware,omitempty"` // device firmware/version (UniFi gear via the controller)
+	OSVersion   string    `json:"os_version,omitempty"` // bare release ("26.6", "13"); compose with OSGuess for display
+	Model       string    `json:"model,omitempty"`      // precise hardware model (mDNS self-report > UniFi)
+	Firmware    string    `json:"firmware,omitempty"`   // device firmware/version (UniFi gear via the controller)
 	Confidence  int       `json:"confidence"`
 	IsExpected  bool      `json:"is_expected"`
 	Ignored     bool      `json:"ignored"`        // operator suppressed this device from review

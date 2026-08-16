@@ -111,6 +111,9 @@ type Discovery struct {
 	ActiveSNMP       *bool `yaml:"active_snmp"`        // SNMP sysName/sysDescr (needs a community)
 	ActiveMDNS       *bool `yaml:"active_mdns"`        // unicast mDNS query → service types, model= (Fire TV, Apple TV, Cast, …)
 	ActiveMedia      *bool `yaml:"active_media"`       // AirPlay/Cast HTTP identity probes (exact model + name)
+	ActiveNTLM       *bool `yaml:"active_ntlm"`        // NTLMSSP challenge on SMB/RDP → Windows release + build
+	ActiveProxmox    *bool `yaml:"active_proxmox"`     // unauthenticated Proxmox VE login page → identity + version
+	ActiveESPHome    *bool `yaml:"active_esphome"`     // ESPHome /events → device title + entity set
 	TCPBehavioral    *bool `yaml:"tcp_behavioral"`     // closed-port timing → OS/firewall behaviour (weak, corroborating)
 	ThoroughWake     *bool `yaml:"thorough_wake"`      // extra wake pass for power-saving devices (slower)
 }
@@ -120,6 +123,7 @@ type EffectiveDiscovery struct {
 	PassiveARP, PassiveDHCP, PassiveMDNS, PassiveSSDP, PassiveNetBIOS                 bool
 	ActiveICMP, ActiveTCP, ActiveUDP, ActiveBanners, ActiveReverseDNS, ActiveARPTable bool
 	ActiveSNMP, ActiveMDNS, ActiveMedia, TCPBehavioral, ThoroughWake                  bool
+	ActiveNTLM, ActiveProxmox, ActiveESPHome                                          bool
 }
 
 // Resolve turns the pointer-valued toggles into concrete booleans, defaulting
@@ -133,6 +137,7 @@ func (d Discovery) Resolve() EffectiveDiscovery {
 		ActiveBanners:    on(d.ActiveBanners),
 		ActiveReverseDNS: on(d.ActiveReverseDNS), ActiveARPTable: on(d.ActiveARPTable),
 		ActiveSNMP: on(d.ActiveSNMP), ActiveMDNS: on(d.ActiveMDNS), ActiveMedia: on(d.ActiveMedia),
+		ActiveNTLM: on(d.ActiveNTLM), ActiveProxmox: on(d.ActiveProxmox), ActiveESPHome: on(d.ActiveESPHome),
 		TCPBehavioral: on(d.TCPBehavioral), ThoroughWake: on(d.ThoroughWake),
 	}
 }
@@ -286,7 +291,32 @@ func Default() Config {
 	return Config{
 		Sensor: Sensor{DedupeWindowMS: 50},
 		ActiveProbe: ActiveProbe{
-			Rate: ProbeRate{MaxProbesPerSec: 20, CycleInterval: 15 * time.Minute},
+			// A default port list, deliberately short. Each entry earns its place
+			// twice — as a service worth knowing about, and as the gate on an
+			// identity probe:
+			//
+			//	22     SSH       — banner states the Linux distribution and release
+			//	80     HTTP      — server banner
+			//	443    HTTPS     — liveness on hosts that answer nothing else
+			//	445    SMB       ┐ NTLMSSP challenge → Windows release + build
+			//	3389   RDP       ┘
+			//	161    SNMP      — sysName/sysDescr
+			//	8006   Proxmox   — VE login page → hypervisor identity + version
+			//	7000   AirPlay   ┐ /info → exact Apple model + OS build. A MAC
+			//	49152  AirPlay   │ ANSWERS ON 7000, an iOS device on 49152 —
+			//	5000   RAOP      ┘ 5000 is the classic AirTunes port, and DSM's
+			//	62078  lockdownd — iOS Wi-Fi sync; listening proves iOS family
+			//
+			// An identity probe never opens a port the scan did not find, so a
+			// port missing from this list silently disables the probe behind it.
+			// That is exactly the "correct code that never ran" failure this
+			// project keeps hitting, so the pairing is asserted in a test.
+			//
+			// To scan NO TCP ports, turn off discovery.active_tcp — that is the
+			// switch for it. An empty list here (or in Settings) falls back to
+			// this default rather than disabling the scan.
+			TCPPorts: []int{22, 80, 443, 445, 3389, 161, 5000, 7000, 8006, 49152, 62078},
+			Rate:     ProbeRate{MaxProbesPerSec: 20, CycleInterval: 15 * time.Minute},
 		},
 		UniFi: UniFi{
 			PathPrefix:   "/proxy/network",

@@ -539,3 +539,59 @@ func TestAddressAging(t *testing.T) {
 		})
 	}
 }
+
+// TestOSVersionCorroboration pins the guard that keeps a version derived for one
+// OS family from being rendered against another. os_version wins on its own
+// evidence but only attaches when its source also stated the winning os_guess.
+func TestOSVersionCorroboration(t *testing.T) {
+	cases := []struct {
+		name       string
+		osSource   observation.Source // source of the winning os_guess
+		osValue    string
+		osConf     int
+		wantOS     string
+		wantVerSet bool
+	}{
+		{
+			name:     "same source states both",
+			osSource: observation.SourceActiveMedia, osValue: "macOS", osConf: 76,
+			wantOS: "macOS", wantVerSet: true,
+		},
+		{
+			// The UniFi fingerprint outranks the media probe's own OS claim, so the
+			// host reads "Windows" — and the AirPlay-derived "26.6" must NOT follow
+			// it. Dropping the version is the honest outcome; printing "Windows 26.6"
+			// would read as a fact and is not one.
+			name:     "a stronger unrelated source wins the OS name",
+			osSource: observation.SourceUniFi, osValue: "Windows", osConf: 95,
+			wantOS: "Windows", wantVerSet: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			st := newStore(t)
+			ctx := context.Background()
+			sink := observation.NewSink("seed", st)
+			rec := func(src observation.Source, a observation.Attribute, v string, c int) {
+				if _, err := sink.Record(ctx, src, observation.SubjectMAC, "aa:bb:cc:00:00:09", a, v, c, observation.At(testT0)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			// The media probe read a build string and derived both name and version.
+			rec(observation.SourceActiveMedia, observation.AttrOSVersion, "26.6", 88)
+			rec(tc.osSource, observation.AttrOSGuess, tc.osValue, tc.osConf)
+
+			if _, err := New(st, nil, testParams()).Rebuild(ctx); err != nil {
+				t.Fatal(err)
+			}
+			snap, _ := st.LoadEntities(ctx)
+			h := snap.Hosts[0]
+			if h.OSGuess != tc.wantOS {
+				t.Fatalf("os_guess = %q, want %q", h.OSGuess, tc.wantOS)
+			}
+			if got := h.OSVersion != ""; got != tc.wantVerSet {
+				t.Errorf("os_version = %q (set=%v), want set=%v", h.OSVersion, got, tc.wantVerSet)
+			}
+		})
+	}
+}

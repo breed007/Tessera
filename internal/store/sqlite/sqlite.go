@@ -407,9 +407,9 @@ func (s *Store) ReplaceEntities(ctx context.Context, snap entity.Snapshot) error
 	}
 	for _, h := range snap.Hosts {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO hosts
-			(id, stable_id, display_name, device_class, os_guess, model, firmware, confidence, is_expected, ignored, tags, icon, notes, first_seen, last_seen)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			h.ID, h.StableID, h.DisplayName, h.DeviceClass, h.OSGuess, h.Model, h.Firmware, h.Confidence,
+			(id, stable_id, display_name, device_class, os_guess, os_version, model, firmware, confidence, is_expected, ignored, tags, icon, notes, first_seen, last_seen)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			h.ID, h.StableID, h.DisplayName, h.DeviceClass, h.OSGuess, h.OSVersion, h.Model, h.Firmware, h.Confidence,
 			b2i(h.IsExpected), b2i(h.Ignored), strings.Join(h.Tags, ","), h.Icon, h.Notes, ft(h.FirstSeen), ft(h.LastSeen)); err != nil {
 			return fmt.Errorf("sqlite: insert host: %w", err)
 		}
@@ -511,7 +511,7 @@ func (s *Store) loadSubnets(ctx context.Context) ([]entity.Subnet, error) {
 }
 
 func (s *Store) loadHosts(ctx context.Context) ([]entity.Host, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, stable_id, display_name, device_class, os_guess, model, firmware, confidence, is_expected, ignored, tags, icon, notes, first_seen, last_seen FROM hosts ORDER BY id`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, stable_id, display_name, device_class, os_guess, os_version, model, firmware, confidence, is_expected, ignored, tags, icon, notes, first_seen, last_seen FROM hosts ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -521,7 +521,7 @@ func (s *Store) loadHosts(ctx context.Context) ([]entity.Host, error) {
 		var v entity.Host
 		var exp, ign int
 		var fs, ls, tags string
-		if err := rows.Scan(&v.ID, &v.StableID, &v.DisplayName, &v.DeviceClass, &v.OSGuess, &v.Model, &v.Firmware, &v.Confidence, &exp, &ign, &tags, &v.Icon, &v.Notes, &fs, &ls); err != nil {
+		if err := rows.Scan(&v.ID, &v.StableID, &v.DisplayName, &v.DeviceClass, &v.OSGuess, &v.OSVersion, &v.Model, &v.Firmware, &v.Confidence, &exp, &ign, &tags, &v.Icon, &v.Notes, &fs, &ls); err != nil {
 			return nil, err
 		}
 		v.IsExpected = exp != 0

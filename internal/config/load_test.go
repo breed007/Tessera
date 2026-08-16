@@ -206,3 +206,63 @@ func TestValidateDNSServerHalfConfigured(t *testing.T) {
 		t.Error("expected error for unknown server_type")
 	}
 }
+
+// TestDefaultTCPPortsGateTheIdentityProbes pins the pairing between the default
+// port list and the probes gated on it.
+//
+// This is a regression test for a failure mode rather than for a value. An
+// identity probe never opens a port the TCP scan did not find, so deleting a
+// port here does not break a test somewhere else — it silently switches the
+// probe off, and the only symptom is an inventory that quietly stops reporting
+// Windows releases or Proxmox versions. Naming the dependency here makes the
+// removal fail loudly instead.
+func TestDefaultTCPPortsGateTheIdentityProbes(t *testing.T) {
+	gated := map[int]string{
+		22:    "SSH banner → Linux distribution + release",
+		445:   "NTLMSSP challenge → Windows release + build",
+		3389:  "NTLMSSP challenge → Windows release + build (RDP transport)",
+		8006:  "Proxmox VE login page → hypervisor identity + version",
+		7000:  "AirPlay /info on a Mac → exact model + macOS release",
+		49152: "AirPlay /info on an iOS device → exact model + iOS release",
+		62078: "lockdownd → proves the iOS family (iPhone/iPad have no other tell)",
+	}
+	got := map[int]bool{}
+	for _, p := range Default().ActiveProbe.TCPPorts {
+		got[p] = true
+	}
+	for port, why := range gated {
+		if !got[port] {
+			t.Errorf("port %d missing from the default TCP ports — this silently disables: %s", port, why)
+		}
+	}
+}
+
+// An omitted tcp_ports keeps the defaults; an explicit empty list is honoured as
+// the operator saying so.
+func TestTCPPortsOverlay(t *testing.T) {
+	base := "storage:\n  driver: sqlite\n  dsn: test.db\n"
+
+	cfg, err := Load(writeTemp(t, base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.ActiveProbe.TCPPorts) == 0 {
+		t.Error("an omitted tcp_ports should keep the defaults")
+	}
+
+	cfg, err = Load(writeTemp(t, base+"active_probe:\n  tcp_ports: [22]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.ActiveProbe.TCPPorts) != 1 || cfg.ActiveProbe.TCPPorts[0] != 22 {
+		t.Errorf("tcp_ports override not applied: %v", cfg.ActiveProbe.TCPPorts)
+	}
+
+	cfg, err = Load(writeTemp(t, base+"active_probe:\n  tcp_ports: []\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.ActiveProbe.TCPPorts) != 0 {
+		t.Errorf("an explicit empty tcp_ports should scan nothing, got %v", cfg.ActiveProbe.TCPPorts)
+	}
+}

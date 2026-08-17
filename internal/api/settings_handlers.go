@@ -7,15 +7,15 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/tessera/tessera/internal/account"
-	"github.com/tessera/tessera/internal/alert"
-	"github.com/tessera/tessera/internal/collector/active"
-	"github.com/tessera/tessera/internal/collector/dns"
-	"github.com/tessera/tessera/internal/collector/fingerbank"
-	"github.com/tessera/tessera/internal/collector/proxmox"
-	"github.com/tessera/tessera/internal/collector/unifi"
-	"github.com/tessera/tessera/internal/config"
-	"github.com/tessera/tessera/internal/settings"
+	"github.com/breed007/Tessera/internal/account"
+	"github.com/breed007/Tessera/internal/alert"
+	"github.com/breed007/Tessera/internal/collector/active"
+	"github.com/breed007/Tessera/internal/collector/dns"
+	"github.com/breed007/Tessera/internal/collector/fingerbank"
+	"github.com/breed007/Tessera/internal/collector/proxmox"
+	"github.com/breed007/Tessera/internal/collector/unifi"
+	"github.com/breed007/Tessera/internal/config"
+	"github.com/breed007/Tessera/internal/settings"
 )
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {

@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tessera/tessera/internal/entity"
-	"github.com/tessera/tessera/internal/observation"
-	"github.com/tessera/tessera/internal/portrisk"
-	"github.com/tessera/tessera/internal/store"
+	"github.com/breed007/Tessera/internal/entity"
+	"github.com/breed007/Tessera/internal/observation"
+	"github.com/breed007/Tessera/internal/portrisk"
+	"github.com/breed007/Tessera/internal/store"
 )
 
 // HostRow is a host plus its bound identities, for the inventory table.

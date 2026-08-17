@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/tessera/tessera/internal/netid"
-	"github.com/tessera/tessera/internal/observation"
+	"github.com/breed007/Tessera/internal/netid"
+	"github.com/breed007/Tessera/internal/observation"
 )
 
 // manualConfidence: human annotations are authoritative (§3.2); they enter the

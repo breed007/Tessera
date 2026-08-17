@@ -9,7 +9,7 @@ import (
 
 	"golang.org/x/net/dns/dnsmessage"
 
-	"github.com/tessera/tessera/internal/collector/passive"
+	"github.com/breed007/Tessera/internal/collector/passive"
 )
 
 // mDNS service-type catalog — ported from the IP Recon MDNSActiveStimulus list.

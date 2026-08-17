@@ -1,4 +1,4 @@
-module github.com/tessera/tessera
+module github.com/breed007/Tessera
 
 go 1.26
 

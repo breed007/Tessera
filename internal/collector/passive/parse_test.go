@@ -8,7 +8,7 @@ import (
 	"github.com/gopacket/gopacket"
 	"github.com/gopacket/gopacket/layers"
 
-	"github.com/tessera/tessera/internal/observation"
+	"github.com/breed007/Tessera/internal/observation"
 )
 
 var now = time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)

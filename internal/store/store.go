@@ -9,8 +9,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/tessera/tessera/internal/entity"
-	"github.com/tessera/tessera/internal/observation"
+	"github.com/breed007/Tessera/internal/entity"
+	"github.com/breed007/Tessera/internal/observation"
 )
 
 // ObservationLog is the append-only log (§3.1). Collectors (via observation.Sink)

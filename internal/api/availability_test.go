@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tessera/tessera/internal/entity"
+	"github.com/breed007/Tessera/internal/entity"
 )
 
 func TestUptimeRatio(t *testing.T) {

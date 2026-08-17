@@ -17,15 +17,15 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/tessera/tessera/internal/app"
-	"github.com/tessera/tessera/internal/config"
+	"github.com/breed007/Tessera/internal/app"
+	"github.com/breed007/Tessera/internal/config"
 )
 
 // version (marketing) and buildNumber (YYYY.MM.DD.HH.mm build stamp) are set at
-// build time via -ldflags. version is PINNED (1.0.0) and bumped by hand at real
+// build time via -ldflags. version is PINNED (1.0.1) and bumped by hand at real
 // releases — NOT per commit; buildNumber increments every build.
 var (
-	version     = "1.0.0"
+	version     = "1.0.1"
 	buildNumber = "dev"
 )
 

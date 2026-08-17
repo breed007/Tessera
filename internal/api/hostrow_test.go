@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tessera/tessera/internal/entity"
+	"github.com/breed007/Tessera/internal/entity"
 )
 
 // TestPrimaryIPIsMostCurrent pins what the inventory table shows: the address a

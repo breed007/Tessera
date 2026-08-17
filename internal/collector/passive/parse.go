@@ -18,7 +18,7 @@ import (
 	"github.com/gopacket/gopacket"
 	"github.com/gopacket/gopacket/layers"
 
-	"github.com/tessera/tessera/internal/observation"
+	"github.com/breed007/Tessera/internal/observation"
 )
 
 // emit is one observation produced by parsing. Each carries its own source

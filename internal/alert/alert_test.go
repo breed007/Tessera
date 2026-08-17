@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tessera/tessera/internal/entity"
+	"github.com/breed007/Tessera/internal/entity"
 )
 
 type fakeStore struct {

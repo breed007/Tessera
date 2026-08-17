@@ -1,6 +1,6 @@
 package active
 
-import "github.com/tessera/tessera/internal/observation"
+import "github.com/breed007/Tessera/internal/observation"
 
 // emit is one observation produced by a probe, carrying its own source
 // (active_icmp, active_tcp, active_arp, active_rdns, active_snmp).

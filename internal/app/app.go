@@ -14,31 +14,31 @@ import (
 
 	"path/filepath"
 
-	"github.com/tessera/tessera/internal/account"
-	"github.com/tessera/tessera/internal/alert"
-	"github.com/tessera/tessera/internal/api"
-	"github.com/tessera/tessera/internal/collector"
-	"github.com/tessera/tessera/internal/collector/active"
-	"github.com/tessera/tessera/internal/collector/dhcp"
-	"github.com/tessera/tessera/internal/collector/dns"
-	"github.com/tessera/tessera/internal/collector/fingerbank"
-	"github.com/tessera/tessera/internal/collector/passive"
-	"github.com/tessera/tessera/internal/collector/proxmox"
-	"github.com/tessera/tessera/internal/collector/unifi"
-	"github.com/tessera/tessera/internal/config"
-	"github.com/tessera/tessera/internal/entity"
-	"github.com/tessera/tessera/internal/observation"
-	"github.com/tessera/tessera/internal/reconcile"
-	"github.com/tessera/tessera/internal/secret"
-	"github.com/tessera/tessera/internal/settings"
-	"github.com/tessera/tessera/internal/store"
-	"github.com/tessera/tessera/internal/store/sqlite"
+	"github.com/breed007/Tessera/internal/account"
+	"github.com/breed007/Tessera/internal/alert"
+	"github.com/breed007/Tessera/internal/api"
+	"github.com/breed007/Tessera/internal/collector"
+	"github.com/breed007/Tessera/internal/collector/active"
+	"github.com/breed007/Tessera/internal/collector/dhcp"
+	"github.com/breed007/Tessera/internal/collector/dns"
+	"github.com/breed007/Tessera/internal/collector/fingerbank"
+	"github.com/breed007/Tessera/internal/collector/passive"
+	"github.com/breed007/Tessera/internal/collector/proxmox"
+	"github.com/breed007/Tessera/internal/collector/unifi"
+	"github.com/breed007/Tessera/internal/config"
+	"github.com/breed007/Tessera/internal/entity"
+	"github.com/breed007/Tessera/internal/observation"
+	"github.com/breed007/Tessera/internal/reconcile"
+	"github.com/breed007/Tessera/internal/secret"
+	"github.com/breed007/Tessera/internal/settings"
+	"github.com/breed007/Tessera/internal/store"
+	"github.com/breed007/Tessera/internal/store/sqlite"
 )
 
 // Version (marketing) and Build (YYYY.MM.DD.HH.mm stamp) are set by main from its
 // ldflag-injected values, then surfaced to the UI footer via the API.
 var (
-	Version = "1.0.0"
+	Version = "1.0.1"
 	Build   = "dev"
 )
 

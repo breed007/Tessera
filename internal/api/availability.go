@@ -3,7 +3,7 @@ package api
 import (
 	"time"
 
-	"github.com/tessera/tessera/internal/entity"
+	"github.com/breed007/Tessera/internal/entity"
 )
 
 // AvailabilityView is a host's uptime summary for its detail page.

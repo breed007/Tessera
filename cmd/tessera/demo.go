@@ -7,9 +7,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/tessera/tessera/internal/app"
-	"github.com/tessera/tessera/internal/observation"
-	"github.com/tessera/tessera/internal/reconcile"
+	"github.com/breed007/Tessera/internal/app"
+	"github.com/breed007/Tessera/internal/observation"
+	"github.com/breed007/Tessera/internal/reconcile"
 )
 
 // cmdDemo seeds a handful of synthetic observations through the standard write

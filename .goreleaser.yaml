@@ -8,12 +8,12 @@ project_name: tessera
 # apt/dpkg refuse the upgrade. {{.Timestamp}} (Unix epoch) always increases, and
 # dpkg compares the trailing digit run numerically. Tagged releases are unaffected
 # — they use the tag as the version and already increase monotonically.
-# The marketing version is pinned (1.0.0) and bumped by hand at real releases;
+# The marketing version is pinned (1.0.1) and bumped by hand at real releases;
 # only the build number (a timestamp) increments per build. A snapshot's package
-# version carries that timestamp, tilde-prefixed so it sorts BEFORE the 1.0.0
+# version carries that timestamp, tilde-prefixed so it sorts BEFORE the 1.0.1
 # release proper, while apt still sees each new local build as an upgrade.
 snapshot:
-  version_template: "1.0.0~snapshot.{{ .Timestamp }}"
+  version_template: "1.0.1~snapshot.{{ .Timestamp }}"
 
 before:
   hooks:
@@ -32,9 +32,9 @@ builds:
       - arm64
     ldflags:
       # Pinned marketing version + per-build timestamp. main.version is hardcoded
-      # (not {{.Version}}) so the footer shows a clean "1.0.0" while the package
+      # (not {{.Version}}) so the footer shows a clean "1.0.1" while the package
       # version (above) carries the incrementing timestamp.
-      - -s -w -X main.version=1.0.0 -X main.buildNumber={{ time "2006.01.02.15.04" }}
+      - -s -w -X main.version=1.0.1 -X main.buildNumber={{ time "2006.01.02.15.04" }}
 
 archives:
   - id: tessera
@@ -50,7 +50,7 @@ nfpms:
   - id: packages
     package_name: tessera
     vendor: The Tessera Authors
-    homepage: https://github.com/tessera/tessera
+    homepage: https://github.com/breed007/Tessera
     maintainer: The Tessera Authors <noreply@tessera.invalid>
     description: |-
       Discovery-first IPAM. A continuously reconciled inventory of your address
@@ -87,6 +87,6 @@ changelog:
 
 release:
   github:
-    owner: tessera
-    name: tessera
+    owner: breed007
+    name: Tessera
   draft: true

@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/tessera/tessera/internal/config"
-	"github.com/tessera/tessera/internal/secret"
+	"github.com/breed007/Tessera/internal/config"
+	"github.com/breed007/Tessera/internal/secret"
 )
 
 // memStore is a trivial in-memory settings.Store for tests.

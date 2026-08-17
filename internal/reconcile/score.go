@@ -4,7 +4,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/tessera/tessera/internal/observation"
+	"github.com/breed007/Tessera/internal/observation"
 )
 
 // scored is an observation paired with its effective (decayed) confidence and

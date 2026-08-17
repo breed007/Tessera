@@ -213,3 +213,10 @@ configs/               example configuration
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+Tessera embeds several third-party data files (device-model and fingerprint
+tables) and links a handful of Go modules. Those are catalogued in
+[NOTICE.md](NOTICE.md) — **including four entries whose redistribution terms are
+not yet confirmed**, which are marked there rather than glossed over. Resolve
+those before repackaging or vendoring the data files; they are separable from
+the identification engine.

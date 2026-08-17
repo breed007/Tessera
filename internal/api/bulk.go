@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/tessera/tessera/internal/account"
-	"github.com/tessera/tessera/internal/entity"
-	"github.com/tessera/tessera/internal/observation"
+	"github.com/breed007/Tessera/internal/account"
+	"github.com/breed007/Tessera/internal/entity"
+	"github.com/breed007/Tessera/internal/observation"
 )
 
 // bulkRequest applies one action to many devices at once (operator; the forget

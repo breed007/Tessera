@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/tessera/tessera/internal/observation"
+	"github.com/breed007/Tessera/internal/observation"
 )
 
 // emit is one observation the poller will record (source is always unifi). Pure

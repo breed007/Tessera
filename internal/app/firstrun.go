@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/tessera/tessera/internal/secret"
+	"github.com/breed007/Tessera/internal/secret"
 )
 
 // loadOrCreateMasterKey returns the settings-secret master key. When no key is

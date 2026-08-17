@@ -1,6 +1,6 @@
 package reconcile
 
-import "github.com/tessera/tessera/internal/observation"
+import "github.com/breed007/Tessera/internal/observation"
 
 // Tier is the source-priority tier used as a tiebreak when two observations
 // carry equal (decayed) confidence (§3.3). Lower wins.

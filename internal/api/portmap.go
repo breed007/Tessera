@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/tessera/tessera/internal/collector/unifi"
-	"github.com/tessera/tessera/internal/entity"
+	"github.com/breed007/Tessera/internal/collector/unifi"
+	"github.com/breed007/Tessera/internal/entity"
 )
 
 // PortSlot is one physical port on a switch: empty, or the device patched into it.

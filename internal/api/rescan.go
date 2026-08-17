@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"net/netip"
 
-	"github.com/tessera/tessera/internal/collector"
-	"github.com/tessera/tessera/internal/collector/active"
+	"github.com/breed007/Tessera/internal/collector"
+	"github.com/breed007/Tessera/internal/collector/active"
 )
 
 // handleVersion reports the marketing version + build stamp for the UI footer.

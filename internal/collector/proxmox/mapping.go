@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/tessera/tessera/internal/observation"
+	"github.com/breed007/Tessera/internal/observation"
 )
 
 const (

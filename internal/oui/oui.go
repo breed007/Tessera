@@ -8,7 +8,7 @@ package oui
 import (
 	"strings"
 
-	"github.com/tessera/tessera/internal/netid"
+	"github.com/breed007/Tessera/internal/netid"
 )
 
 // Lookup returns the vendor for a normalized MAC's OUI prefix. It returns ok=false

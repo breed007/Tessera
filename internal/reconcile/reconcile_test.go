@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tessera/tessera/internal/entity"
-	"github.com/tessera/tessera/internal/observation"
-	"github.com/tessera/tessera/internal/store"
-	"github.com/tessera/tessera/internal/store/sqlite"
+	"github.com/breed007/Tessera/internal/entity"
+	"github.com/breed007/Tessera/internal/observation"
+	"github.com/breed007/Tessera/internal/store"
+	"github.com/breed007/Tessera/internal/store/sqlite"
 )
 
 func newStore(t *testing.T) store.Store {

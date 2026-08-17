@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/tessera/tessera/internal/observation"
+	"github.com/breed007/Tessera/internal/observation"
 )
 
 func TestParseHostsLine(t *testing.T) {

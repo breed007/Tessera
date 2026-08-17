@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tessera/tessera/internal/entity"
-	"github.com/tessera/tessera/internal/netid"
-	"github.com/tessera/tessera/internal/observation"
-	"github.com/tessera/tessera/internal/oui"
+	"github.com/breed007/Tessera/internal/entity"
+	"github.com/breed007/Tessera/internal/netid"
+	"github.com/breed007/Tessera/internal/observation"
+	"github.com/breed007/Tessera/internal/oui"
 )
 
 // highValueAttrs are the attributes whose disagreements are recorded as

@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tessera/tessera/internal/observation"
+	"github.com/breed007/Tessera/internal/observation"
 )
 
 // Collector is a long-running signal source. Run blocks until ctx is cancelled

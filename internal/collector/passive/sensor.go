@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tessera/tessera/internal/observation"
+	"github.com/breed007/Tessera/internal/observation"
 )
 
 // Sensor is the passive capture collector (§4.1). It runs one capture goroutine

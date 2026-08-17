@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/tessera/tessera/internal/collector"
+	"github.com/breed007/Tessera/internal/collector"
 )
 
 // SystemInfo is the operator's at-a-glance health snapshot: collectors, data

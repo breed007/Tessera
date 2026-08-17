@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/tessera/tessera/internal/netid"
+	"github.com/breed007/Tessera/internal/netid"
 )
 
 func readProcNetARP() (string, error) {

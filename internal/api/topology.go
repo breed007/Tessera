@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/tessera/tessera/internal/entity"
+	"github.com/breed007/Tessera/internal/entity"
 )
 
 // TopoNode is one device in the topology tree, with the link that attaches it to

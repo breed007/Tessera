@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/tessera/tessera/internal/collector"
-	"github.com/tessera/tessera/internal/observation"
+	"github.com/breed007/Tessera/internal/collector"
+	"github.com/breed007/Tessera/internal/observation"
 )
 
 // Poller is the long-running Proxmox collector. Each cycle it enumerates nodes,

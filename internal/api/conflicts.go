@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tessera/tessera/internal/entity"
-	"github.com/tessera/tessera/internal/observation"
+	"github.com/breed007/Tessera/internal/entity"
+	"github.com/breed007/Tessera/internal/observation"
 )
 
 // resolveConflictRequest records which value an operator keeps as source of truth

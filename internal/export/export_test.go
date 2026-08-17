@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tessera/tessera/internal/entity"
+	"github.com/breed007/Tessera/internal/entity"
 )
 
 func ptr[T any](v T) *T { return &v }

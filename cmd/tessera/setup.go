@@ -17,7 +17,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/term"
 
-	"github.com/tessera/tessera/internal/secret"
+	"github.com/breed007/Tessera/internal/secret"
 )
 
 // cmdSetup is the guided installer (§M9). It introspects the host's interfaces,

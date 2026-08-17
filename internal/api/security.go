@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tessera/tessera/internal/entity"
-	"github.com/tessera/tessera/internal/portrisk"
+	"github.com/breed007/Tessera/internal/entity"
+	"github.com/breed007/Tessera/internal/portrisk"
 )
 
 // SecFinding is one exposed-service / posture observation worth an operator's

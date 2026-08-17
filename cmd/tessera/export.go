@@ -7,9 +7,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/tessera/tessera/internal/config"
-	"github.com/tessera/tessera/internal/export"
-	"github.com/tessera/tessera/internal/store/sqlite"
+	"github.com/breed007/Tessera/internal/config"
+	"github.com/breed007/Tessera/internal/export"
+	"github.com/breed007/Tessera/internal/store/sqlite"
 )
 
 // cmdExport renders the current reconciled inventory to an interchange format

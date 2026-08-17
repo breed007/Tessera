@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tessera/tessera/internal/collector/passive"
-	"github.com/tessera/tessera/internal/observation"
+	"github.com/breed007/Tessera/internal/collector/passive"
+	"github.com/breed007/Tessera/internal/observation"
 )
 
 // Config configures the active prober. Subnets are mandatory and explicit

@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tessera/tessera/internal/account"
-	"github.com/tessera/tessera/internal/config"
-	"github.com/tessera/tessera/internal/secret"
-	"github.com/tessera/tessera/internal/settings"
-	"github.com/tessera/tessera/internal/store/sqlite"
+	"github.com/breed007/Tessera/internal/account"
+	"github.com/breed007/Tessera/internal/config"
+	"github.com/breed007/Tessera/internal/secret"
+	"github.com/breed007/Tessera/internal/settings"
+	"github.com/breed007/Tessera/internal/store/sqlite"
 )
 
 // TestGlobalSecurityHeaders pins the app-wide CSP and hardening headers. The

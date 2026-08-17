@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/tessera/tessera/internal/config"
-	"github.com/tessera/tessera/internal/secret"
+	"github.com/breed007/Tessera/internal/config"
+	"github.com/breed007/Tessera/internal/secret"
 )
 
 // Store is the key/value persistence the service needs.

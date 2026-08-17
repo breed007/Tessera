@@ -19,9 +19,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tessera/tessera/internal/entity"
-	"github.com/tessera/tessera/internal/observation"
-	"github.com/tessera/tessera/internal/store"
+	"github.com/breed007/Tessera/internal/entity"
+	"github.com/breed007/Tessera/internal/observation"
+	"github.com/breed007/Tessera/internal/store"
 )
 
 // Params are the reconciliation thresholds (§3.3), normally sourced from config.

@@ -1,6 +1,6 @@
 [Unit]
 Description=Tessera — discovery-first IPAM
-Documentation=https://github.com/tessera/tessera
+Documentation=https://github.com/breed007/Tessera
 After=network-online.target
 Wants=network-online.target
 

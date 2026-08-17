@@ -14,9 +14,9 @@ import (
 
 	_ "modernc.org/sqlite" // registers the "sqlite" database/sql driver
 
-	"github.com/tessera/tessera/internal/entity"
-	"github.com/tessera/tessera/internal/observation"
-	"github.com/tessera/tessera/internal/store"
+	"github.com/breed007/Tessera/internal/entity"
+	"github.com/breed007/Tessera/internal/observation"
+	"github.com/breed007/Tessera/internal/store"
 )
 
 //go:embed migrations/*.up.sql

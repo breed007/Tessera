@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/tessera/tessera/internal/collector/active"
-	"github.com/tessera/tessera/internal/entity"
+	"github.com/breed007/Tessera/internal/collector/active"
+	"github.com/breed007/Tessera/internal/entity"
 )
 
 // AddrCell is one address in a subnet's map: its state and (if any) the host

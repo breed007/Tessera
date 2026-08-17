@@ -9,8 +9,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/tessera/tessera/internal/icons"
-	"github.com/tessera/tessera/internal/web"
+	"github.com/breed007/Tessera/internal/icons"
+	"github.com/breed007/Tessera/internal/web"
 )
 
 var iconIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,40}$`)

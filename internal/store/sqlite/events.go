@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/tessera/tessera/internal/entity"
+	"github.com/breed007/Tessera/internal/entity"
 )
 
 // AppendEvents inserts change events (append-only) in one transaction.

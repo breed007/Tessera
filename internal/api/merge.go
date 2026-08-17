@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tessera/tessera/internal/entity"
+	"github.com/breed007/Tessera/internal/entity"
 )
 
 // mergeRequest links two host identities as the same device: secondary folds

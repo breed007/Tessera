@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tessera/tessera/internal/entity"
+	"github.com/breed007/Tessera/internal/entity"
 )
 
 // handleEvents serves the change history (the Activity feed + consumer sync).

@@ -18,13 +18,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/tessera/tessera/internal/account"
-	"github.com/tessera/tessera/internal/collector"
-	"github.com/tessera/tessera/internal/config"
-	"github.com/tessera/tessera/internal/observation"
-	"github.com/tessera/tessera/internal/settings"
-	"github.com/tessera/tessera/internal/store"
-	"github.com/tessera/tessera/internal/web"
+	"github.com/breed007/Tessera/internal/account"
+	"github.com/breed007/Tessera/internal/collector"
+	"github.com/breed007/Tessera/internal/config"
+	"github.com/breed007/Tessera/internal/observation"
+	"github.com/breed007/Tessera/internal/settings"
+	"github.com/breed007/Tessera/internal/store"
+	"github.com/breed007/Tessera/internal/web"
 )
 
 // Options configures the API server.

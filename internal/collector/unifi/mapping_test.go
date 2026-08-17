@@ -3,7 +3,7 @@ package unifi
 import (
 	"testing"
 
-	"github.com/tessera/tessera/internal/observation"
+	"github.com/breed007/Tessera/internal/observation"
 )
 
 // fixtures are trimmed but real-shaped private-API envelopes.

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/tessera/tessera/internal/netid"
+	"github.com/breed007/Tessera/internal/netid"
 )
 
 // Appender is the narrow write capability the log sink needs. The store

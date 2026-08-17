@@ -14,7 +14,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/tessera/tessera/internal/observation"
+	"github.com/breed007/Tessera/internal/observation"
 )
 
 // Signature is the set of signals interrogated for a classification. Its cache

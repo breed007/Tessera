@@ -4,7 +4,7 @@
 //
 //	tessera run     [-config path]   run the daemon (default)
 //	tessera migrate [-config path]   apply schema migrations and exit
-//	tessera demo    [-config path]   seed synthetic observations, reconcile, print entities
+//	tessera demo    [-config path] [-full]  seed synthetic observations, reconcile, print entities
 //	tessera version                  print version and exit
 package main
 

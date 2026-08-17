@@ -17,7 +17,18 @@ import (
 // log into entities, and prints the result. It demonstrates the M1 architecture
 // end-to-end without any live network collector.
 func cmdDemo(args []string) error {
-	cfg, log, err := loadConfig(args, "demo")
+	// -full is handled here rather than in loadConfig, which is shared by every
+	// command and has no business knowing about a demo-only switch.
+	full := false
+	rest := args[:0:0]
+	for _, a := range args {
+		if a == "-full" || a == "--full" {
+			full = true
+			continue
+		}
+		rest = append(rest, a)
+	}
+	cfg, log, err := loadConfig(rest, "demo")
 	if err != nil {
 		return err
 	}
@@ -99,15 +110,32 @@ func cmdDemo(args []string) error {
 		},
 	}
 
-	for _, fn := range seed {
-		if _, err := fn(); err != nil {
-			return fmt.Errorf("demo seed: %w", err)
+	// -full REPLACES the minimal seed rather than adding to it. The two describe
+	// different networks — running both leaves two subnets both called "LAN" and
+	// a device list that is half illustration, half example.
+	//
+	// It also anchors its timeline to NOW, not to t0. The minimal seed is fixed
+	// in time on purpose (deterministic output for the JSON dump below), but a
+	// populated UI whose every address has aged to stale reads as a broken
+	// install rather than a demonstration.
+	if full {
+		if err := seedDemoNetwork(ctx, probe, time.Now().Add(-30*time.Minute)); err != nil {
+			return fmt.Errorf("demo seed (-full): %w", err)
+		}
+	} else {
+		for _, fn := range seed {
+			if _, err := fn(); err != nil {
+				return fmt.Errorf("demo seed: %w", err)
+			}
 		}
 	}
 
 	// Reconcile with a clock anchored just after the synthetic timeline so the
 	// demo's addresses are "active" and confidences aren't decayed to zero.
 	clock := t0.Add(time.Minute)
+	if full {
+		clock = time.Now()
+	}
 	recon := reconcile.New(a.Store(), log, reconcile.Params{
 		Now: func() time.Time { return clock },
 	})

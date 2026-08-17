@@ -24,6 +24,29 @@ passive and active signals, that a human then *annotates and corrects*.
 > refusal, port fail-fast, backpressure-tolerant write path, and GoReleaser
 > multi-arch releases with `.deb`/`.rpm`/`.apk` + systemd + Docker).
 
+## What it looks like
+
+The inventory after a sweep — what was found, what is new, and what still needs
+a human's eye. Nothing is typed in; every row was discovered.
+
+![Tessera dashboard](docs/screenshots/dashboard.png)
+
+Switch topology, reconstructed from the controller's port↔MAC mapping, and the
+patch-panel view of the same data:
+
+![Network topology](docs/screenshots/topology.png)
+![Switch ports](docs/screenshots/ports.png)
+
+And the part that makes the rest trustworthy — the raw observation log every
+conclusion is folded from, filterable by source, subject and attribute:
+
+![Observation log](docs/screenshots/observations.png)
+
+> These are captured from `tessera demo -full`, which seeds an invented network
+> — no address, hostname or device above belongs to anyone. Run it yourself to
+> get the same inventory in about a second, without pointing Tessera at anything
+> you own.
+
 ## Architecture — the one rule
 
 There is **one append-only observation log**, and **every collector writes to it
@@ -66,6 +89,10 @@ go build -o tessera ./cmd/tessera   # pure Go, no capture
 # See the whole pipeline without touching a network: seed synthetic
 # observations through the real write path, reconcile, print entities.
 ./tessera demo -config configs/tessera.example.yaml
+
+# -full seeds a larger invented network (25 devices, 3 subnets, services,
+# topology and a real disagreement) — enough to explore the UI with.
+./tessera demo -full -config configs/tessera.example.yaml
 
 # Apply schema migrations and exit.
 ./tessera migrate -config configs/tessera.example.yaml
